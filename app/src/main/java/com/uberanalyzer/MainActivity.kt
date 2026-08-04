@@ -259,7 +259,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         titleText = TextView(this).apply {
-            text = "⚡ inDrive • Fila em Tempo Real e Mapa"
+            text = "⚡ inDrive Analyzer ${getAppVersionName()}"
             setTextColor(Color.WHITE)
             textSize = 16f
             typeface = Typeface.DEFAULT_BOLD
@@ -597,11 +597,11 @@ class MainActivity : AppCompatActivity() {
         val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
 
         currentActiveRoutes = limitedRoutes.toMutableList()
-        titleText.text = "⚡ inDrive • Fila em Tempo Real (${limitedRoutes.size} rotas)"
+        titleText.text = "⚡ inDrive Analyzer ${getAppVersionName()}"
         routesCardsContainer.removeAllViews()
 
         if (limitedRoutes.isEmpty()) {
-            titleText.text = "⚡ inDrive • Fila em Tempo Real (Aguardando leitor)"
+            titleText.text = "⚡ inDrive Analyzer ${getAppVersionName()}"
             val waitingCard = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -915,6 +915,15 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton("Cancelar", null)
             .show()
+    }
+
+    private fun getAppVersionName(): String {
+        return try {
+            val pInfo = packageManager.getPackageInfo(packageName, 0)
+            "v" + pInfo.versionName
+        } catch (e: Exception) {
+            "v1.0"
+        }
     }
 }
 
