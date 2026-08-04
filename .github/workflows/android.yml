@@ -38,17 +38,28 @@ jobs:
       - name: Build with Gradle
         run: gradle assembleDebug
 
+      - name: Extract App Version
+        id: get_version
+        run: |
+          # Procura pela linha com versionName no app/build.gradle ou app/build.gradle.kts
+          VERSION=$(grep -E 'versionName\s+|=|\?' app/build.gradle* | head -n 1 | tr -d '="' | awk '{print $NF}' | tr -d "'")
+          if [ -z "$VERSION" ]; then
+            VERSION="1.0.${{ github.run_number }}"
+          fi
+          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
+          name: app-debug-v${{ steps.get_version.outputs.version }}
           path: app/build/outputs/apk/debug/app-debug.apk
 
       - name: Release APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "v1.0.${{ github.run_number }}"
-          name: "Release v1.0.${{ github.run_number }}"
+          tag_name: "v${{ steps.get_version.outputs.version }}-${{ github.run_number }}"
+          name: "Release v${{ steps.get_version.outputs.version }}"
           files: app/build/outputs/apk/debug/app-debug.apk
         env:
           GITHUB_TOKEN: ${{ secrets.repo_token_auto_releases }}
