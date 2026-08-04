@@ -25,11 +25,17 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import android.accessibilityservice.AccessibilityService
+import android.location.Geocoder
+import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import com.uberanalyzer.service.UberAccessibilityService
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 
 class MainActivity : AppCompatActivity() {
@@ -586,6 +592,8 @@ class MainActivity : AppCompatActivity() {
         webView.loadDataWithBaseURL("https://openstreetmap.org", mapHtml, "text/html", "UTF-8", null)
     }
 
+    private val geocodeCache = ConcurrentHashMap<String, Pair<Double, Double>>()
+
     private fun displayRoutesOnMap(routes: List<RouteData>) {
         val maxRoutesConfig = settingsManager.getMaxRoutes()
         val limitedRoutes = routes.take(maxRoutesConfig)
@@ -598,10 +606,9 @@ class MainActivity : AppCompatActivity() {
 
         currentActiveRoutes = limitedRoutes.toMutableList()
         titleText.text = "⚡ inDrive Analyzer ${getAppVersionName()}"
-        routesCardsContainer.removeAllViews()
 
         if (limitedRoutes.isEmpty()) {
-            titleText.text = "⚡ inDrive Analyzer ${getAppVersionName()}"
+            routesCardsContainer.removeAllViews()
             val waitingCard = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -638,32 +645,45 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val jsRoutesArray = JSONArray()
+        // Asynchronously resolve real coordinates on background thread
+        Thread {
+            val jsRoutesArray = JSONArray()
+
+            limitedRoutes.forEachIndexed { index, route ->
+                val (pLat, pLng) = resolveCoordinates(route.pickup, true, route.distanceKm, index)
+                val (dLat, dLng) = resolveCoordinates(route.dropoff, false, route.distanceKm, index)
+
+                val jsObj = JSONObject().apply {
+                    put("pickup", route.pickup.replace("'", "\\'").replace("\"", ""))
+                    put("dropoff", route.dropoff.replace("'", "\\'").replace("\"", ""))
+                    put("price", route.price)
+                    put("distanceKm", route.distanceKm)
+                    put("pLat", pLat)
+                    put("pLng", pLng)
+                    put("dLat", dLat)
+                    put("dLng", dLng)
+                    put("passenger", route.passenger)
+                    put("passengerPhoto", route.passengerPhoto)
+                    put("showPhoto", settingsManager.getShowPassengerPhoto())
+                    put("showName", settingsManager.getShowPassengerName())
+                }
+                jsRoutesArray.put(jsObj)
+            }
+
+            runOnUiThread {
+                renderCardsAndMapUi(limitedRoutes, jsRoutesArray)
+            }
+        }.start()
+    }
+
+    private fun renderCardsAndMapUi(limitedRoutes: List<RouteData>, jsRoutesArray: JSONArray) {
+        val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
+        routesCardsContainer.removeAllViews()
 
         limitedRoutes.forEachIndexed { index, route ->
             val colorHex = ROUTE_COLORS[index % ROUTE_COLORS.size]
             val colorInt = Color.parseColor(colorHex)
 
-            val (pLat, pLng) = resolveCoordinates(route.pickup, true, route.distanceKm, index)
-            val (dLat, dLng) = resolveCoordinates(route.dropoff, false, route.distanceKm, index)
-
-            val jsObj = JSONObject().apply {
-                put("pickup", route.pickup.replace("'", "\\'").replace("\"", ""))
-                put("dropoff", route.dropoff.replace("'", "\\'").replace("\"", ""))
-                put("price", route.price)
-                put("distanceKm", route.distanceKm)
-                put("pLat", pLat)
-                put("pLng", pLng)
-                put("dLat", dLat)
-                put("dLng", dLng)
-                put("passenger", route.passenger)
-                put("passengerPhoto", route.passengerPhoto)
-                put("showPhoto", settingsManager.getShowPassengerPhoto())
-                put("showName", settingsManager.getShowPassengerName())
-            }
-            jsRoutesArray.put(jsObj)
-
-            // Build visual card for this route
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(10), dp(8), dp(10), dp(8))
@@ -762,44 +782,122 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun shortenAddress(addr: String): String {
-        val paren = addr.indexOf('(')
-        if (paren > 0) return addr.substring(0, paren).trim()
-        if (addr.length > 25) return addr.take(22) + "..."
-        return addr
+    private fun cleanAddressForGeocoding(rawAddress: String): String {
+        if (rawAddress.isBlank()) return ""
+        var clean = rawAddress
+        // Remove OCR noise, hashtags and inDrive internal codes like #8573311-!#
+        clean = clean.replace(Regex("#[0-9A-Za-z\\-!#]+"), "")
+        // Remove internal prefixes like "District of Freedom"
+        clean = clean.replace(Regex("(?i)district\\s+of\\s+[a-zA-Z0-9\\s\\-!#]+"), "")
+        // Convert parentheses and dashes to clean commas
+        clean = clean.replace("(", ", ").replace(")", ", ").replace("-", ", ").replace("#", "")
+        
+        val parts = clean.split(",").map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("R$") }
+        var result = parts.distinct().joinToString(", ")
+
+        if (result.isNotBlank() && !result.contains("São Paulo", ignoreCase = true) && !result.contains("SP", ignoreCase = true)) {
+            result += ", São Paulo, SP, Brasil"
+        } else if (result.isNotBlank() && !result.contains("Brasil", ignoreCase = true)) {
+            result += ", Brasil"
+        }
+        return result
     }
 
-    private fun resolveCoordinates(address: String, isPickup: Boolean, distanceKm: Double, routeIndex: Int): Pair<Double, Double> {
+    private fun resolveCoordinates(rawAddress: String, isPickup: Boolean, distanceKm: Double, routeIndex: Int): Pair<Double, Double> {
+        val clean = cleanAddressForGeocoding(rawAddress)
+        if (clean.isNotBlank() && geocodeCache.containsKey(clean)) {
+            return geocodeCache[clean]!!
+        }
+
+        // 1. Try Android native Geocoder
+        if (clean.isNotBlank()) {
+            try {
+                if (Geocoder.isPresent()) {
+                    val geocoder = Geocoder(this, Locale("pt", "BR"))
+                    @Suppress("DEPRECATION")
+                    val addresses = geocoder.getFromLocationName(clean, 1)
+                    if (!addresses.isNullOrEmpty()) {
+                        val addr = addresses[0]
+                        val res = Pair(addr.latitude, addr.longitude)
+                        geocodeCache[clean] = res
+                        return res
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("Geocoding", "Android Geocoder error for $clean: ${e.message}")
+            }
+
+            // 2. Try OpenStreetMap Nominatim API fallback
+            try {
+                val query = URLEncoder.encode(clean, "UTF-8")
+                val url = URL("https://nominatim.openstreetmap.org/search?format=json&q=$query&limit=1&countrycodes=br")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.setRequestProperty("User-Agent", "inDriveAnalyzer/1.0 (Android)")
+                conn.connectTimeout = 3000
+                conn.readTimeout = 3000
+                if (conn.responseCode == 200) {
+                    val jsonStr = conn.inputStream.bufferedReader().readText()
+                    val arr = JSONArray(jsonStr)
+                    if (arr.length() > 0) {
+                        val obj = arr.getJSONObject(0)
+                        val lat = obj.getDouble("lat")
+                        val lon = obj.getDouble("lon")
+                        val res = Pair(lat, lon)
+                        geocodeCache[clean] = res
+                        return res
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("Geocoding", "Nominatim OSM error for $clean: ${e.message}")
+            }
+        }
+
+        // 3. Fallback to precise local keyword mapping (evaluating specific stations/neighborhoods FIRST)
+        val fallbackRes = resolveCoordinatesFallback(rawAddress + " " + clean, isPickup, distanceKm, routeIndex)
+        if (clean.isNotBlank()) {
+            geocodeCache[clean] = fallbackRes
+        }
+        return fallbackRes
+    }
+
+    private fun resolveCoordinatesFallback(address: String, isPickup: Boolean, distanceKm: Double, routeIndex: Int): Pair<Double, Double> {
         val lower = address.lowercase(Locale.getDefault())
         return when {
+            // Specific stations, neighborhoods & landmarks FIRST
+            lower.contains("engenheiro goulart") || lower.contains("eng goulart") || lower.contains("keralux") -> Pair(-23.4883, -46.5222)
+            lower.contains("salinas de mossoró") || lower.contains("salinas de mossoro") || lower.contains("vila itaim") || lower.contains("itaim paulista") -> Pair(-23.4975, -46.4063)
+            lower.contains("itaquera") || lower.contains("corinthians") -> Pair(-23.5350, -46.4580)
+            lower.contains("penha") -> Pair(-23.5235, -46.5492)
+            lower.contains("cangaiba") || lower.contains("cangaíba") -> Pair(-23.5021, -46.5268)
+            lower.contains("ermelino") || lower.contains("matarazzo") -> Pair(-23.4862, -46.4839)
+            lower.contains("guaianases") || lower.contains("guaianazes") -> Pair(-23.5423, -46.4137)
+            lower.contains("são miguel") || lower.contains("sao miguel") -> Pair(-23.4939, -46.4419)
+            lower.contains("tatuapé") || lower.contains("tatuape") -> Pair(-23.5408, -46.5767)
+            lower.contains("mooca") -> Pair(-23.5542, -46.5989)
+            lower.contains("santana") -> Pair(-23.5015, -46.6261)
+            lower.contains("tucuruvi") -> Pair(-23.4800, -46.6033)
+            lower.contains("pacaembu") -> Pair(-23.5433, -46.6631)
+            lower.contains("moema") -> Pair(-23.6011, -46.6667)
+            lower.contains("morumbi") -> Pair(-23.6001, -46.7200)
+            lower.contains("pinheiros") -> Pair(-23.567280, -46.702046)
+            lower.contains("itaim bibi") -> Pair(-23.585500, -46.678900)
+            lower.contains("paulista") -> Pair(-23.561684, -46.655981)
+            lower.contains("augusta") -> Pair(-23.554316, -46.658390)
+            lower.contains("consolação") || lower.contains("consolacao") -> Pair(-23.548842, -46.643329)
+            lower.contains("faria lima") -> Pair(-23.586803, -46.682220)
+            lower.contains("berrini") -> Pair(-23.608331, -46.697079)
+            lower.contains("sé") || lower.contains("praça da sé") || lower.contains("praca da se") -> Pair(-23.550520, -46.633308)
+            lower.contains("ibirapuera") -> Pair(-23.587416, -46.657634)
+            lower.contains("aeroporto") || lower.contains("congonhas") -> Pair(-23.626111, -46.656389)
             lower.contains("santo andré") || lower.contains("santo andre") -> Pair(-23.6666, -46.5322)
             lower.contains("são bernardo") || lower.contains("sao bernardo") -> Pair(-23.6939, -46.5650)
             lower.contains("são caetano") || lower.contains("sao caetano") -> Pair(-23.6226, -46.5588)
             lower.contains("guarulhos") -> Pair(-23.4542, -46.5333)
             lower.contains("osasco") -> Pair(-23.5329, -46.7917)
             lower.contains("diadema") -> Pair(-23.6865, -46.6234)
+            // Generic city fallback ONLY if no specific station or neighborhood matched
             lower.contains("são paulo") || lower.contains("sao paulo") || lower.contains("sp") -> Pair(-23.5505, -46.6333)
-            lower.contains("pacaembu") || lower.contains("aembu") -> Pair(-23.5433, -46.6631)
-            lower.contains("moema") -> Pair(-23.6011, -46.6667)
-            lower.contains("tatuapé") || lower.contains("tatuape") -> Pair(-23.5408, -46.5767)
-            lower.contains("santana") -> Pair(-23.5015, -46.6261)
-            lower.contains("morumbi") -> Pair(-23.6001, -46.7200)
-            lower.contains("pinheiros") || lower.contains("carrasco") -> Pair(-23.567280, -46.702046)
-            lower.contains("serralheiro") || lower.contains("dario") -> Pair(-23.593450, -46.685120)
-            lower.contains("itaim") || lower.contains("brejo") -> Pair(-23.585500, -46.678900)
-            lower.contains("japão") || lower.contains("japao") || lower.contains("martinho") -> Pair(-23.511200, -46.588900)
-            lower.contains("olímpia") || lower.contains("olimpia") || lower.contains("bandeirantes") -> Pair(-23.595800, -46.687200)
-            lower.contains("são luiz") || lower.contains("sao luiz") || lower.contains("veras") -> Pair(-23.664500, -46.736400)
-            lower.contains("paulista") -> Pair(-23.561684, -46.655981)
-            lower.contains("augusta") -> Pair(-23.554316, -46.658390)
-            lower.contains("consolação") || lower.contains("consolacao") -> Pair(-23.548842, -46.643329)
-            lower.contains("faria lima") -> Pair(-23.586803, -46.682220)
-            lower.contains("berrini") -> Pair(-23.608331, -46.697079)
-            lower.contains("sé") || lower.contains("se") -> Pair(-23.550520, -46.633308)
-            lower.contains("ibirapuera") -> Pair(-23.587416, -46.657634)
-            lower.contains("aeroporto") || lower.contains("congonhas") -> Pair(-23.626111, -46.656389)
             else -> {
-                // Keep fallback routes close to city center; never draw long diagonal lines across South America
                 val i = routeIndex % 3
                 val centerLat = -23.5650 + (i * 0.008)
                 val centerLng = -46.6600 - (i * 0.008)
