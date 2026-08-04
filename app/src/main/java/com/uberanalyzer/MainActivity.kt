@@ -4,6 +4,8 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.ComponentName
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -92,9 +94,15 @@ class MainActivity : AppCompatActivity() {
         val passengerPhoto: String = ""
     )
 
+    private var lastDetectedRidesJsonStr: String? = null
+    private var activeJsonDialog: androidx.appcompat.app.AlertDialog? = null
+
     private val routeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val ridesJsonStr = intent?.getStringExtra("rides_json")
+            if (!ridesJsonStr.isNullOrBlank()) {
+                lastDetectedRidesJsonStr = ridesJsonStr
+            }
             val routesList = mutableListOf<RouteData>()
 
             if (!ridesJsonStr.isNullOrBlank()) {
@@ -290,6 +298,18 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
 
+        val jsonBtn = Button(this).apply {
+            text = "📜 JSON"
+            textSize = 11f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#059669"))
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+            layoutParams = LinearLayout.LayoutParams(-2, -2).apply {
+                setMargins(dp(6), 0, 0, 0)
+            }
+            setOnClickListener { showDetectedJsonDialog() }
+        }
+
         val permChecklistBtn = Button(this).apply {
             text = "📋 Permissões"
             textSize = 11f
@@ -347,6 +367,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         titleRow.addView(titleText)
+        titleRow.addView(jsonBtn)
         titleRow.addView(permChecklistBtn)
         titleRow.addView(refreshButton)
         titleRow.addView(splitScreenButton)
@@ -1486,6 +1507,195 @@ class MainActivity : AppCompatActivity() {
         container.addView(bottomRow)
 
         activePermissionDialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setView(container)
+            .setCancelable(true)
+            .show()
+    }
+
+    private fun showDetectedJsonDialog() {
+        activeJsonDialog?.dismiss()
+
+        val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
+
+        val formattedJson: String
+        var rideCount = 0
+
+        if (!lastDetectedRidesJsonStr.isNullOrBlank()) {
+            val raw = lastDetectedRidesJsonStr!!
+            val parsed = try {
+                val array = JSONArray(raw)
+                rideCount = array.length()
+                array.toString(2)
+            } catch (e: Exception) {
+                rideCount = 1
+                raw
+            }
+            formattedJson = parsed
+        } else if (currentActiveRoutes.isNotEmpty()) {
+            rideCount = currentActiveRoutes.size
+            val jsonArray = JSONArray()
+            currentActiveRoutes.forEachIndexed { idx, r ->
+                val obj = JSONObject().apply {
+                    put("posicao", idx + 1)
+                    put("passageiro", if (r.passenger.isNotBlank()) r.passenger else "Passageiro inDrive")
+                    put("origem", r.pickup)
+                    put("destino", r.dropoff)
+                    put("valor_brl", r.price)
+                    put("distancia_km", r.distanceKm)
+                    put("tempo_min", r.timeMin)
+                    put("ganho_por_km_brl", String.format(Locale.US, "%.2f", r.earningsPerKm).toDoubleOrNull() ?: r.earningsPerKm)
+                    put("score", r.score)
+                }
+                jsonArray.put(obj)
+            }
+            formattedJson = jsonArray.toString(2)
+        } else {
+            rideCount = 0
+            val emptyObj = JSONObject().apply {
+                put("status", "Aguardando capturar corridas do inDrive")
+                put("mensagem", "Abra o aplicativo inDrive lado a lado. O leitor de tela extrairá as corridas automaticamente e disponibilizará o JSON aqui.")
+                put("timestamp", System.currentTimeMillis())
+            }
+            formattedJson = emptyObj.toString(2)
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#0F172A"))
+                cornerRadius = dp(12).toFloat()
+                setStroke(dp(2), Color.parseColor("#38BDF8"))
+            }
+        }
+
+        // Header Title Bar
+        val titleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(8))
+        }
+
+        val titleView = TextView(this).apply {
+            text = "📜 Dados Detectados (JSON) [$rideCount]"
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+        }
+
+        val closeX = TextView(this).apply {
+            text = " ✖ "
+            textSize = 18f
+            setTextColor(Color.parseColor("#94A3B8"))
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            setOnClickListener { activeJsonDialog?.dismiss() }
+        }
+
+        titleRow.addView(titleView)
+        titleRow.addView(closeX)
+        container.addView(titleRow)
+
+        // Subtitle Info
+        val subText = TextView(this).apply {
+            text = if (rideCount > 0) "Estrutura JSON das corridas detectadas na listagem do inDrive:" else "Nenhuma corrida capturada no momento. O JSON será atualizado automaticamente ao detectar corridas."
+            textSize = 12f
+            setTextColor(Color.parseColor("#94A3B8"))
+            setPadding(0, 0, 0, dp(10))
+        }
+        container.addView(subText)
+
+        // Code Scroll View
+        val scrollView = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(-1, dp(280))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#020617"))
+                cornerRadius = dp(8).toFloat()
+                setStroke(dp(1), Color.parseColor("#1E293B"))
+            }
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+        }
+
+        val jsonTextView = TextView(this).apply {
+            text = formattedJson
+            textSize = 11f
+            setTextColor(Color.parseColor("#38BDF8"))
+            typeface = Typeface.MONOSPACE
+            setTextIsSelectable(true)
+        }
+
+        scrollView.addView(jsonTextView)
+        container.addView(scrollView)
+
+        // Actions Bar
+        val actionRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(12), 0, 0)
+        }
+
+        val copyBtn = Button(this).apply {
+            text = "📋 Copiar JSON"
+            textSize = 11f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#0284C7"))
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(0, 0, dp(6), 0) }
+            setOnClickListener {
+                val clipManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipManager.setPrimaryClip(ClipData.newPlainText("inDrive_JSON", formattedJson))
+                Toast.makeText(this@MainActivity, "JSON copiado para a área de transferência!", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        val floatBtn = Button(this).apply {
+            text = "🪟 Flutuar na Tela"
+            textSize = 11f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#8B5CF6"))
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(0, 0, dp(6), 0) }
+            setOnClickListener {
+                if (isOverlayPermissionGranted()) {
+                    val intent = Intent(this@MainActivity, com.uberanalyzer.overlay.OverlayService::class.java).apply {
+                        putExtra(com.uberanalyzer.overlay.OverlayService.EXTRA_JSON_PAYLOAD, formattedJson)
+                        putExtra(com.uberanalyzer.overlay.OverlayService.EXTRA_RIDE_COUNT, rideCount)
+                        if (currentActiveRoutes.isNotEmpty()) {
+                            val first = currentActiveRoutes[0]
+                            putExtra(com.uberanalyzer.overlay.OverlayService.EXTRA_PRICE, first.price)
+                            putExtra(com.uberanalyzer.overlay.OverlayService.EXTRA_DISTANCE, first.distanceKm)
+                        }
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(intent)
+                    } else {
+                        startService(intent)
+                    }
+                    Toast.makeText(this@MainActivity, "Modal flutuante de JSON ativado na tela!", Toast.LENGTH_SHORT).show()
+                    activeJsonDialog?.dismiss()
+                } else {
+                    Toast.makeText(this@MainActivity, "Autorize a permissão de Janela Flutuante no Checklist de Permissões!", Toast.LENGTH_LONG).show()
+                    showPermissionChecklistDialog()
+                }
+            }
+        }
+
+        val closeBtn = Button(this).apply {
+            text = "Fechar"
+            textSize = 11f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#475569"))
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            layoutParams = LinearLayout.LayoutParams(-2, -2)
+            setOnClickListener { activeJsonDialog?.dismiss() }
+        }
+
+        actionRow.addView(copyBtn)
+        actionRow.addView(floatBtn)
+        actionRow.addView(closeBtn)
+        container.addView(actionRow)
+
+        activeJsonDialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setView(container)
             .setCancelable(true)
             .show()
