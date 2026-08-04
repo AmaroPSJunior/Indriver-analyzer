@@ -110,9 +110,7 @@ class MainActivity : AppCompatActivity() {
                         val passName = obj.optString("passenger", "Passageiro")
                         val passPhoto = obj.optString("passenger_photo", "")
                         
-                        val isCompleteAddress = pickup.length >= 6 && dropoff.length >= 6 &&
-                            !pickup.contains("Origem", true) && !dropoff.contains("Destino", true) &&
-                            !pickup.contains("em análise", true) && !dropoff.contains("em análise", true) &&
+                        val isCompleteAddress = pickup.isNotBlank() && dropoff.isNotBlank() &&
                             !pickup.contains("não capturado", true) && !dropoff.contains("não capturado", true)
 
                         if (price > 0.0 && isCompleteAddress) {
@@ -838,14 +836,30 @@ class MainActivity : AppCompatActivity() {
             topRow.addView(priceTitle)
             card.addView(topRow)
 
-            val passRow = TextView(this).apply {
-                text = "👤 ${route.passenger}"
-                setTextColor(Color.parseColor("#E2E8F0"))
+            val passRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(4), 0, dp(4))
+            }
+
+            val passIcon = TextView(this).apply {
+                text = "👤"
+                textSize = 13f
+                setPadding(0, 0, dp(4), 0)
+            }
+
+            val passName = TextView(this).apply {
+                text = if (route.passenger.isNotBlank()) route.passenger else "Passageiro inDrive"
+                setTextColor(Color.parseColor("#F1F5F9"))
                 textSize = 12f
                 typeface = Typeface.DEFAULT_BOLD
                 maxLines = 1
-                setPadding(0, dp(2), 0, dp(2))
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
             }
+
+            passRow.addView(passIcon)
+            passRow.addView(passName)
             card.addView(passRow)
 
             if (settingsManager.getShowRouteMetrics()) {
