@@ -1,7 +1,9 @@
 {
   "name": "inDriver Analyzer",
   "description": "Analisador de corridas para motoristas do inDriver com captura da lista de espera e visualização em pop-up JSON.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": [
+    "geolocation"
+  ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]

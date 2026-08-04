@@ -1,20 +1,28 @@
 package com.uberanalyzer
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.location.Geocoder
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
+import android.webkit.GeolocationPermissions
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -25,9 +33,9 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import android.accessibilityservice.AccessibilityService
-import android.location.Geocoder
-import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.uberanalyzer.service.UberAccessibilityService
 import org.json.JSONArray
 import org.json.JSONObject
@@ -50,6 +58,11 @@ class MainActivity : AppCompatActivity() {
     private var pendingRoutes: List<RouteData>? = null
     private var currentActiveRoutes: MutableList<RouteData> = mutableListOf()
     private lateinit var settingsManager: com.uberanalyzer.settings.SettingsManager
+
+    private var userLat: Double? = null
+    private var userLng: Double? = null
+    private var locationManager: LocationManager? = null
+    private val LOCATION_PERMISSION_REQUEST_CODE = 1001
 
     companion object {
         val ROUTE_COLORS = listOf(
@@ -147,6 +160,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         setupWebView()
+        setupLocationTracking()
 
         // Automatically display initial queue routes on start
         loadInitialQueueRoutes()
@@ -370,13 +384,26 @@ class MainActivity : AppCompatActivity() {
             domStorageEnabled = true
             loadWithOverviewMode = true
             useWideViewPort = true
+            setGeolocationEnabled(true)
             cacheMode = WebSettings.LOAD_DEFAULT
         }
-        webView.webChromeClient = WebChromeClient()
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onGeolocationPermissionsShowPrompt(
+                origin: String?,
+                callback: GeolocationPermissions.Callback?
+            ) {
+                callback?.invoke(origin, true, false)
+            }
+        }
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 isMapLoaded = true
+                userLat?.let { uLat ->
+                    userLng?.let { uLng ->
+                        updateDriverLocationOnMap(uLat, uLng)
+                    }
+                }
                 pendingRoutes?.let {
                     displayRoutesOnMap(it)
                     pendingRoutes = null
@@ -459,6 +486,23 @@ class MainActivity : AppCompatActivity() {
                     var ROUTE_COLORS = ['#00E5FF', '#22C55E', '#F59E0B', '#EC4899', '#A855F7', '#EAB308', '#14B8A6', '#3B82F6', '#F43F5E'];
                     var allRoutesData = [];
                     var routeLinesMap = {};
+                    var driverLocationMarker = null;
+
+                    function updateDriverLocation(lat, lng) {
+                        if (!lat || !lng) return;
+                        var userIcon = L.divIcon({
+                            className: '',
+                            html: '<div style="display:flex;align-items:center;justify-content:center;width:40px;height:40px;background:#2563EB;border:3px solid #FFFFFF;border-radius:50%;box-shadow:0 0 16px #3B82F6,0 4px 12px rgba(0,0,0,0.85);font-size:22px;">🚘</div>',
+                            iconSize: [40, 40],
+                            iconAnchor: [20, 20]
+                        });
+                        if (driverLocationMarker) {
+                            driverLocationMarker.setLatLng([lat, lng]);
+                        } else {
+                            driverLocationMarker = L.marker([lat, lng], {icon: userIcon, zIndexOffset: 2000}).addTo(map)
+                                .bindPopup('<b>🚘 Minha Localização Atual (Motorista)</b>');
+                        }
+                    }
 
                     function updateMultiRouteMap(routesJsonStr) {
                         for (var i = 0; i < routeLayers.length; i++) {
@@ -479,6 +523,9 @@ class MainActivity : AppCompatActivity() {
                         if (!routes || routes.length === 0) return;
 
                         var groupLayers = [];
+                        if (driverLocationMarker) {
+                            groupLayers.push(driverLocationMarker);
+                        }
 
                         for (var idx = 0; idx < routes.length; idx++) {
                             (function(idx) {
@@ -590,6 +637,71 @@ class MainActivity : AppCompatActivity() {
         """.trimIndent()
 
         webView.loadDataWithBaseURL("https://openstreetmap.org", mapHtml, "text/html", "UTF-8", null)
+    }
+
+    private fun setupLocationTracking() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
+                LOCATION_PERMISSION_REQUEST_CODE
+            )
+            return
+        }
+
+        try {
+            locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val locationListener = object : LocationListener {
+                override fun onLocationChanged(location: Location) {
+                    userLat = location.latitude
+                    userLng = location.longitude
+                    updateDriverLocationOnMap(location.latitude, location.longitude)
+                }
+                @Deprecated("Deprecated in Java")
+                override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+                override fun onProviderEnabled(provider: String) {}
+                override fun onProviderDisabled(provider: String) {}
+            }
+
+            if (locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true) {
+                locationManager?.requestLocationUpdates(LocationManager.GPS_PROVIDER, 3000L, 5f, locationListener)
+                val lastGps = locationManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                if (lastGps != null) {
+                    userLat = lastGps.latitude
+                    userLng = lastGps.longitude
+                    updateDriverLocationOnMap(lastGps.latitude, lastGps.longitude)
+                }
+            }
+            if (locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true) {
+                locationManager?.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 3000L, 5f, locationListener)
+                val lastNet = locationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                if (lastNet != null && userLat == null) {
+                    userLat = lastNet.latitude
+                    userLng = lastNet.longitude
+                    updateDriverLocationOnMap(lastNet.latitude, lastNet.longitude)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("Location", "Error setting up location listener: ${e.message}")
+        }
+    }
+
+    private fun updateDriverLocationOnMap(lat: Double, lng: Double) {
+        if (isMapLoaded) {
+            runOnUiThread {
+                webView.evaluateJavascript("updateDriverLocation($lat, $lng)", null)
+            }
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                setupLocationTracking()
+            }
+        }
     }
 
     private val geocodeCache = ConcurrentHashMap<String, Pair<Double, Double>>()
