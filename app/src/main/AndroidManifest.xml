@@ -12,6 +12,20 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <queries>
+        <package android:name="sinet.startup.inDriver" />
+        <package android:name="com.indriver.android" />
+        <package android:name="com.indrive.driver" />
+        <package android:name="com.indrive.passenger" />
+        <package android:name="com.indriver" />
+        <package android:name="com.ubercab" />
+        <package android:name="com.ubercab.driver" />
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="false"
         android:icon="@android:drawable/sym_def_app_icon"

@@ -186,12 +186,48 @@ class MainActivity : AppCompatActivity() {
     private var splitScreenTriggered = false
 
     private fun getInDriveLaunchIntent(): Intent? {
-        val packages = listOf("sinet.startup.inDriver", "com.indriver.android", "com.ubercab")
+        val packages = listOf(
+            "sinet.startup.inDriver",
+            "com.indriver.android",
+            "com.indrive.driver",
+            "com.indrive.passenger",
+            "com.indriver",
+            "com.ubercab",
+            "com.ubercab.driver"
+        )
         for (pkg in packages) {
             val intent = packageManager.getLaunchIntentForPackage(pkg)
             if (intent != null) return intent
         }
-        return null
+
+        // Fallback 1: Query launcher intents for any package containing inDrive/inDriver
+        try {
+            val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+            }
+            val resolveInfos = packageManager.queryIntentActivities(mainIntent, 0)
+            for (ri in resolveInfos) {
+                val pkgName = ri.activityInfo.packageName
+                if (pkgName.contains("indriver", ignoreCase = true) ||
+                    pkgName.contains("indrive", ignoreCase = true) ||
+                    pkgName.contains("startup", ignoreCase = true)) {
+                    val intent = packageManager.getLaunchIntentForPackage(pkgName)
+                    if (intent != null) return intent
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // Fallback 2: Direct launch intent creation for sinet.startup.inDriver
+        return try {
+            Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                setPackage("sinet.startup.inDriver")
+            }
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private fun launchSplitScreenWithInDrive(force: Boolean = false) {
@@ -235,12 +271,21 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this, "💡 Ative o Leitor na Acessibilidade para Tela Dividida automática!", Toast.LENGTH_LONG).show()
                 }
             }
+        } catch (e: android.content.ActivityNotFoundException) {
+            e.printStackTrace()
+            if (force) {
+                Toast.makeText(this, "⚠️ App inDrive (sinet.startup.inDriver) não encontrado.", Toast.LENGTH_LONG).show()
+            }
         } catch (e: Exception) {
             e.printStackTrace()
             try {
                 inDriveIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 startActivity(inDriveIntent)
-            } catch (ex: Exception) {}
+            } catch (ex: Exception) {
+                if (force) {
+                    Toast.makeText(this, "⚠️ Erro ao abrir inDrive.", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 
