@@ -27,6 +27,8 @@ import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.net.Uri
+import android.widget.ScrollView
 import android.widget.Button
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
@@ -163,9 +165,13 @@ class MainActivity : AppCompatActivity() {
         // Automatically display initial queue routes on start
         loadInitialQueueRoutes()
 
-        // Gatilho automático para ativar tela dividida simultaneamente sem falhas (inDrive à esquerda, nosso app à direita)
+        // Gatilho automático para verificar permissões e ativar tela dividida
         window.decorView.postDelayed({
-            launchSplitScreenWithInDrive(force = false)
+            if (!isAccessibilityServiceEnabled() || !isOverlayPermissionGranted()) {
+                showPermissionChecklistDialog()
+            } else {
+                launchSplitScreenWithInDrive(force = false)
+            }
         }, 650)
     }
 
@@ -284,6 +290,18 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
 
+        val permChecklistBtn = Button(this).apply {
+            text = "📋 Permissões"
+            textSize = 11f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#0284C7"))
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+            layoutParams = LinearLayout.LayoutParams(-2, -2).apply {
+                setMargins(dp(6), 0, 0, 0)
+            }
+            setOnClickListener { showPermissionChecklistDialog() }
+        }
+
         val refreshButton = Button(this).apply {
             text = "🔄 Atualizar Fila"
             textSize = 11f
@@ -329,6 +347,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         titleRow.addView(titleText)
+        titleRow.addView(permChecklistBtn)
         titleRow.addView(refreshButton)
         titleRow.addView(splitScreenButton)
         titleRow.addView(configButton)
@@ -342,12 +361,12 @@ class MainActivity : AppCompatActivity() {
         header.addView(accStatusView)
 
         accButton = Button(this).apply {
-            text = "Ativar Leitor inDrive nas Configurações"
+            text = "📋 Checklist de Permissões (Ativar Leitor)"
             textSize = 11f
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.parseColor("#3B82F6"))
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(2), 0, dp(4)) }
-            setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+            setOnClickListener { showPermissionChecklistDialog() }
         }
         header.addView(accButton)
 
@@ -1148,6 +1167,328 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             "v1.0"
         }
+    }
+
+    private fun isOverlayPermissionGranted(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Settings.canDrawOverlays(this)
+        } else true
+    }
+
+    private fun isLocationPermissionGranted(): Boolean {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+               ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun isNotificationListenerEnabled(): Boolean {
+        val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: ""
+        return flat.contains(packageName)
+    }
+
+    private var activePermissionDialog: androidx.appcompat.app.AlertDialog? = null
+
+    private fun showPermissionChecklistDialog() {
+        activePermissionDialog?.dismiss()
+
+        val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            setBackgroundColor(Color.parseColor("#0F172A"))
+        }
+
+        // Title & Header
+        val titleView = TextView(this).apply {
+            text = "🛡️ Checklist de Permissões"
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, 0, 0, dp(4))
+        }
+        container.addView(titleView)
+
+        val subtitleView = TextView(this).apply {
+            text = "Siga o passo a passo com atalhos diretos para liberar as permissões no seu dispositivo:"
+            textSize = 12f
+            setTextColor(Color.parseColor("#94A3B8"))
+            setPadding(0, 0, 0, dp(12))
+        }
+        container.addView(subtitleView)
+
+        // Calculate Status
+        val accOk = isAccessibilityServiceEnabled()
+        val overlayOk = isOverlayPermissionGranted()
+        val locationOk = isLocationPermissionGranted()
+        val notificationOk = isNotificationListenerEnabled()
+
+        var countActive = 0
+        if (accOk) countActive++
+        if (overlayOk) countActive++
+        if (locationOk) countActive++
+        if (notificationOk) countActive++
+
+        // Summary Card
+        val summaryCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = GradientDrawable().apply {
+                setColor(if (accOk && overlayOk) Color.parseColor("#065F46") else Color.parseColor("#78350F"))
+                cornerRadius = dp(8).toFloat()
+            }
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(12)) }
+        }
+
+        val summaryText = TextView(this).apply {
+            text = if (accOk && overlayOk) {
+                "🎉 $countActive de 4 Permissões Ativas! O inDrive Analyzer está pronto para rodar."
+            } else {
+                "⚠️ Status: $countActive de 4 Permissões Concluídas. Complete as etapas abaixo:"
+            }
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        summaryCard.addView(summaryText)
+        container.addView(summaryCard)
+
+        val scrollView = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(-1, dp(380))
+        }
+
+        val stepsLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        // Helper to build a Step Card
+        fun createStepCard(
+            stepNumber: String,
+            title: String,
+            description: String,
+            isGranted: Boolean,
+            isOptional: Boolean = false,
+            buttonText: String,
+            onButtonClick: () -> Unit
+        ): View {
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                background = GradientDrawable().apply {
+                    setColor(Color.parseColor("#1E293B"))
+                    cornerRadius = dp(8).toFloat()
+                    setStroke(dp(1), if (isGranted) Color.parseColor("#22C55E") else Color.parseColor("#334155"))
+                }
+                layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(10)) }
+            }
+
+            val headerRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+
+            val badgeText = TextView(this).apply {
+                text = stepNumber
+                textSize = 11f
+                setTextColor(Color.WHITE)
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(dp(6), dp(2), dp(6), dp(2))
+                background = GradientDrawable().apply {
+                    setColor(Color.parseColor("#2563EB"))
+                    cornerRadius = dp(4).toFloat()
+                }
+            }
+            headerRow.addView(badgeText)
+
+            val stepTitle = TextView(this).apply {
+                text = "  $title"
+                textSize = 13f
+                setTextColor(Color.WHITE)
+                typeface = Typeface.DEFAULT_BOLD
+                layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+            }
+            headerRow.addView(stepTitle)
+
+            val statusTag = TextView(this).apply {
+                text = when {
+                    isGranted -> "✅ ATIVO"
+                    isOptional -> "⚠️ OPCIONAL"
+                    else -> "❌ PENDENTE"
+                }
+                textSize = 11f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(
+                    when {
+                        isGranted -> Color.parseColor("#4ADE80")
+                        isOptional -> Color.parseColor("#FBBF24")
+                        else -> Color.parseColor("#F87171")
+                    }
+                )
+            }
+            headerRow.addView(statusTag)
+            card.addView(headerRow)
+
+            val descText = TextView(this).apply {
+                text = description
+                textSize = 12f
+                setTextColor(Color.parseColor("#CBD5E1"))
+                setPadding(0, dp(6), 0, dp(8))
+            }
+            card.addView(descText)
+
+            val actionBtn = Button(this).apply {
+                text = buttonText
+                textSize = 11f
+                setTextColor(Color.WHITE)
+                setBackgroundColor(if (isGranted) Color.parseColor("#334155") else Color.parseColor("#2563EB"))
+                setPadding(dp(10), dp(6), dp(10), dp(6))
+                setOnClickListener { onButtonClick() }
+            }
+            card.addView(actionBtn)
+
+            return card
+        }
+
+        // PASSO 1: Configuração Restrita (Android 13/14+)
+        stepsLayout.addView(
+            createStepCard(
+                stepNumber = "1️⃣ PASSO 1",
+                title = "Configuração Restrita (Android 13/14+)",
+                description = "Se aparecer a mensagem 'Configuração Restrita' na Acessibilidade:\n1. Toque no botão abaixo para 'Informações do App'.\n2. No canto superior direito, toque nos 3 pontinhos (⋮).\n3. Selecione 'Permitir configurações restritas'.",
+                isGranted = accOk,
+                isOptional = false,
+                buttonText = "⚙️ Abrir Informações do App (3 Pontinhos ⋮)",
+                onButtonClick = {
+                    try {
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.parse("package:$packageName")
+                        }
+                        startActivity(intent)
+                    } catch (e: Exception) {
+                        Toast.makeText(this, "Abra Configurações do Celular -> Aplicativos -> inDrive Analyzer", Toast.LENGTH_LONG).show()
+                    }
+                }
+            )
+        )
+
+        // PASSO 2: Leitura de Tela (Acessibilidade)
+        stepsLayout.addView(
+            createStepCard(
+                stepNumber = "2️⃣ PASSO 2",
+                title = "Leitura de Tela (Acessibilidade)",
+                description = "Ative o 'inDrive Analyzer' para capturar valores, endereços e rotas em tempo real.",
+                isGranted = accOk,
+                isOptional = false,
+                buttonText = if (accOk) "✅ Leitura de Tela Ativa" else "🔓 Ativar Leitura de Tela nas Configurações",
+                onButtonClick = {
+                    try {
+                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    } catch (e: Exception) {
+                        Toast.makeText(this, "Abra Configurações -> Acessibilidade -> inDrive Analyzer", Toast.LENGTH_LONG).show()
+                    }
+                }
+            )
+        )
+
+        // PASSO 3: Janela Flutuante (Overlay)
+        stepsLayout.addView(
+            createStepCard(
+                stepNumber = "3️⃣ PASSO 3",
+                title = "Janela Flutuante (Sobreposição)",
+                description = "Permite desenhar o mapa flutuante e cards sobre o app inDrive.",
+                isGranted = overlayOk,
+                isOptional = false,
+                buttonText = if (overlayOk) "✅ Janela Flutuante Permitida" else "🪟 Autorizar Janela Flutuante",
+                onButtonClick = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        try {
+                            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+                            startActivity(intent)
+                        } catch (e: Exception) {
+                            startActivity(Intent(Settings.ACTION_SETTINGS))
+                        }
+                    }
+                }
+            )
+        )
+
+        // PASSO 4: Localização GPS
+        stepsLayout.addView(
+            createStepCard(
+                stepNumber = "4️⃣ PASSO 4",
+                title = "Localização GPS (Motorista)",
+                description = "Exibe sua localização exata no mapa para calcular distâncias de embarque.",
+                isGranted = locationOk,
+                isOptional = false,
+                buttonText = if (locationOk) "✅ GPS Ativo" else "📍 Autorizar Acesso ao GPS",
+                onButtonClick = {
+                    setupLocationTracking()
+                    Toast.makeText(this, "Verificando permissão de GPS...", Toast.LENGTH_SHORT).show()
+                }
+            )
+        )
+
+        // PASSO 5: Notificações (Opcional)
+        stepsLayout.addView(
+            createStepCard(
+                stepNumber = "5️⃣ PASSO 5",
+                title = "Acesso a Notificações",
+                description = "Opcional. Captura ofertas recebidas através de alertas do sistema.",
+                isGranted = notificationOk,
+                isOptional = true,
+                buttonText = if (notificationOk) "✅ Notificações Ativas" else "🔔 Ativar Leitura de Notificações",
+                onButtonClick = {
+                    try {
+                        startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+                    } catch (e: Exception) {
+                        Toast.makeText(this, "Abra Configurações -> Acesso a Notificações", Toast.LENGTH_LONG).show()
+                    }
+                }
+            )
+        )
+
+        scrollView.addView(stepsLayout)
+        container.addView(scrollView)
+
+        // Bottom Action Row
+        val bottomRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(12), 0, 0)
+        }
+
+        val recheckBtn = Button(this).apply {
+            text = "🔄 Re-verificar"
+            textSize = 11f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#475569"))
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            layoutParams = LinearLayout.LayoutParams(-2, -2).apply { setMargins(0, 0, dp(8), 0) }
+            setOnClickListener {
+                showPermissionChecklistDialog()
+            }
+        }
+
+        val closeBtn = Button(this).apply {
+            text = "Concluir e Fechar"
+            textSize = 11f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#10B981"))
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+            setOnClickListener {
+                activePermissionDialog?.dismiss()
+                updateStatusView()
+            }
+        }
+
+        bottomRow.addView(recheckBtn)
+        bottomRow.addView(closeBtn)
+        container.addView(bottomRow)
+
+        activePermissionDialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setView(container)
+            .setCancelable(true)
+            .show()
     }
 }
 
