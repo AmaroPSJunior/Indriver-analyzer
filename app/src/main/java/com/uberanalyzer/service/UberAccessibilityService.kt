@@ -113,7 +113,16 @@ class UberAccessibilityService : AccessibilityService() {
     private fun collectTextFast(node: AccessibilityNodeInfo?, sb: StringBuilder) {
         if (node == null) return
         node.text?.let { if (it.isNotBlank()) sb.append(it).append(" | ") }
-        node.contentDescription?.let { if (it.isNotBlank()) sb.append(it).append(" | ") }
+        node.contentDescription?.let { desc ->
+            if (desc.isNotBlank()) {
+                val str = desc.toString()
+                if (str.startsWith("http://") || str.startsWith("https://") || str.startsWith("data:image/")) {
+                    sb.append(str).append(" | ")
+                } else {
+                    sb.append(str).append(" | ")
+                }
+            }
+        }
         
         for (i in 0 until node.childCount) {
             val child = node.getChild(i)

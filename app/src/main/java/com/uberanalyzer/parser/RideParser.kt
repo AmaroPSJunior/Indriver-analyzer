@@ -24,13 +24,22 @@ object RideParser {
         "solicitações", "solicitacoes", "aguardando", "lado a lado", "analisador", "analyzer"
     )
 
-    // Indicators for street names, avenues, neighborhoods, or landmarks
+    // Indicators for street names, avenues, logradouros, neighborhoods, or landmarks
     private val STREET_KEYWORDS = listOf(
-        "rua", "r.", "av", "av.", "avenida", "al", "al.", "alameda", "pç", "pç.", "praça", "praca",
-        "est", "est.", "estrada", "rod", "rod.", "rodovia", "bd", "bd.", "bairro", "jd", "jd.", "jardim",
-        "vl", "vl.", "vila", "pq", "pq.", "parque", "tv", "tv.", "travessa", "largo", "condomínio", "condominio",
-        "res", "res.", "residencial", "loteamento", "centro", "estação", "estacao", "terminal", "aeroporto",
-        "shopping", "hospital", "universidade", "ponto", "praia", "ponte"
+        "rua", "r.", "r", "avenida", "av.", "av", "alameda", "al.", "al", "praça", "praca", "pç.", "pç",
+        "estrada", "est.", "est", "rodovia", "rod.", "rod", "servidão", "servidao", "serv.", "serv",
+        "viaduto", "vd.", "vd", "travessa", "tv.", "tv", "largo", "lg.", "lg", "ponte", "passagem", "beco",
+        "quadra", "trecho", "acesso", "marginal", "bairro", "b.", "jardim", "jd.", "jd", "vila", "vl.", "vl",
+        "parque", "pq.", "pq", "condomínio", "condominio", "residencial", "res.", "res", "loteamento",
+        "centro", "estação", "estacao", "terminal", "aeroporto", "shopping", "hospital", "universidade", "ponto", "praia"
+    )
+
+    // Logradouro prefixes that explicitly mark the beginning of a street name
+    private val LOGRADOURO_PREFIXES = listOf(
+        "rua", "r.", "avenida", "av.", "av", "alameda", "al.", "praça", "praca", "pç.", "travessa", "tv.",
+        "estrada", "est.", "rodovia", "rod.", "servidão", "servidao", "serv.", "viaduto", "vd.", "largo", "lg.",
+        "ponte", "passagem", "beco", "quadra", "trecho", "acesso", "marginal", "vila", "vl.", "jardim", "jd.",
+        "parque", "pq.", "condomínio", "condominio", "residencial", "res."
     )
 
     /**
@@ -187,7 +196,7 @@ object RideParser {
     }
 
     /**
-     * Extract clean Pickup and Dropoff addresses
+     * Extract clean Pickup and Dropoff addresses with logradouro, number, neighborhood, and city intelligence
      */
     private fun extractAddresses(lines: List<String>, fullBlockText: String): Pair<String, String> {
         val validCandidates = mutableListOf<String>()
@@ -195,20 +204,31 @@ object RideParser {
         for (line in lines) {
             val lower = line.lowercase(Locale.getDefault())
 
-            // Ignore noise
+            // Ignore noise keywords
             if (NOISE_KEYWORDS.any { noise -> lower == noise || lower.contains(noise) }) continue
 
-            // Check if line looks like an address
-            val hasStreetKeyword = STREET_KEYWORDS.any { street -> lower.contains(street) }
-            val hasAddressPunctuation = line.contains(",") || line.contains("-")
-            val isLocationName = line.length in 5..60 && !line.contains("★")
+            // 1. Check if line explicitly starts with or contains a logradouro (Rua, Av, Alameda, Praça, Estrada, etc.)
+            val startsWithLogradouro = LOGRADOURO_PREFIXES.any { prefix ->
+                lower.startsWith(prefix) || lower.contains(" $prefix ") || lower.contains(" $prefix.")
+            }
 
-            if (hasStreetKeyword || hasAddressPunctuation || isLocationName) {
+            // 2. Check if line contains street keywords or number/address punctuation (e.g., ", 120" or "nº 45")
+            val hasStreetKeyword = STREET_KEYWORDS.any { street -> lower.contains(street) }
+            val hasAddressPunctuation = line.contains(",") || line.contains("-") || line.contains("nº", true) || line.contains("n°", true)
+            val isLocationName = line.length in 5..70 && !line.contains("★")
+
+            if (startsWithLogradouro || hasStreetKeyword || hasAddressPunctuation || isLocationName) {
                 val cleaned = cleanAddressString(line)
                 if (cleaned.length >= 4 && !validCandidates.contains(cleaned)) {
                     validCandidates.add(cleaned)
                 }
             }
+        }
+
+        // Prioritize candidates that start with an explicit logradouro prefix
+        validCandidates.sortByDescending { addr ->
+            val lower = addr.lowercase(Locale.getDefault())
+            if (LOGRADOURO_PREFIXES.any { lower.startsWith(it) }) 2 else 1
         }
 
         var pickup = if (validCandidates.isNotEmpty()) validCandidates[0] else ""
@@ -242,6 +262,9 @@ object RideParser {
             clean = clean.replace(Regex("(?i)\\b${Regex.escape(noise)}\\b"), "")
         }
         clean = clean.replace(Regex("\\s+"), " ").trim()
+        
+        // Remove leading commas or dashes
+        clean = clean.removePrefix(",").removePrefix("-").trim()
         return clean.ifBlank { addr }
     }
 
