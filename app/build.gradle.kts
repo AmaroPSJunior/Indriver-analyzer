@@ -5,6 +5,14 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Captura a variável enviada pelo parâmetro -PbuildNumber do Gradle.
+// Se não for informada (ex: build local), usa o valor padrão 1.
+val buildNum: Int = if (project.hasProperty("buildNumber")) {
+    project.property("buildNumber").toString().toIntOrNull() ?: 1
+} else {
+    1
+}
+
 android {
     namespace = "com.uberanalyzer"
     compileSdk = 34
@@ -13,8 +21,10 @@ android {
         applicationId = "com.uberanalyzer"
         minSdk = 26
         targetSdk = 33 // Slightly lower target sometimes helps with Play Protect warnings on installation
-        versionCode = 2
-        versionName = "1.0.1"
+        
+        // Versão dinâmica ajustada pelo build number
+        versionCode = buildNum
+        versionName = "1.0.$buildNum"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
