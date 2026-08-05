@@ -151,9 +151,9 @@ class UberAccessibilityService : AccessibilityService() {
             val width = displayMetrics.widthPixels.toFloat()
             val height = displayMetrics.heightPixels.toFloat()
 
-            // Left-to-right swipe gesture on top monitored item (start 15% width -> end 85% width, at ~28% height)
-            val startX = width * 0.15f
-            val endX = width * 0.85f
+            // Left-to-right swipe gesture on top monitored item in inDrive (left half in split-screen mode: ~8% to ~42% width, at ~28% height)
+            val startX = width * 0.08f
+            val endX = width * 0.42f
             val startY = height * 0.28f
             val endY = height * 0.28f
 

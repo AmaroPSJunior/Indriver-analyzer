@@ -925,23 +925,8 @@ class MainActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
             }
 
-            val hideCardBtn = Button(this).apply {
-                text = "🙈 Ocultar"
-                textSize = 10f
-                setTextColor(Color.WHITE)
-                setBackgroundColor(Color.parseColor("#E11D48"))
-                setPadding(dp(6), dp(2), dp(6), dp(2))
-                layoutParams = LinearLayout.LayoutParams(-2, -2).apply {
-                    setMargins(dp(2), 0, 0, 0)
-                }
-                setOnClickListener {
-                    hideTopRideAndCascade(index)
-                }
-            }
-
             topRow.addView(badge)
             topRow.addView(priceTitle)
-            topRow.addView(hideCardBtn)
             card.addView(topRow)
 
             val passRow = LinearLayout(this).apply {
