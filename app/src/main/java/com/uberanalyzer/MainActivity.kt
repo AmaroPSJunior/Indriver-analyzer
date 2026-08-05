@@ -861,22 +861,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun hideTopRideAndCascade(rideIndex: Int = 0) {
-        // 1. Dispatch swipe gesture (left-to-right) via Accessibility Service to hide trip in inDrive
+        // Dispatch swipe gesture (left-to-right) via Accessibility Service to hide trip in inDrive app on left side
         com.uberanalyzer.service.UberAccessibilityService.triggerHideTopTrip(this)
-
-        // 2. Cascade removal from queue so next item strictly becomes index zero
-        if (currentActiveRoutes.isNotEmpty()) {
-            val idxToRemove = if (rideIndex in currentActiveRoutes.indices) rideIndex else 0
-            val removed = currentActiveRoutes.removeAt(idxToRemove)
-            Toast.makeText(
-                this,
-                "🙈 Viagem de R$ ${String.format(Locale.getDefault(), "%.2f", removed.price)} ocultada (Deslizado no inDrive)!",
-                Toast.LENGTH_SHORT
-            ).show()
-            displayRoutesOnMap(currentActiveRoutes)
-        } else {
-            Toast.makeText(this, "🙈 Gesto de ocultar (deslizar) enviado ao inDrive!", Toast.LENGTH_SHORT).show()
-        }
+        Toast.makeText(this, "🙈 Gesto de ocultar (deslizar) enviado ao inDrive!", Toast.LENGTH_SHORT).show()
     }
 
     private fun renderCardsAndMapUi(limitedRoutes: List<RouteData>, jsRoutesArray: JSONArray) {
