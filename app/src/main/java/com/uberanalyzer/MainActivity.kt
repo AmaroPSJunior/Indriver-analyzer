@@ -332,7 +332,7 @@ class MainActivity : AppCompatActivity() {
 
         val titleScrollView = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
-            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+            layoutParams = LinearLayout.LayoutParams(-1, -2)
         }
 
         val titleRow = LinearLayout(this).apply {
