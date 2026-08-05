@@ -42,6 +42,15 @@ class SettingsActivity : AppCompatActivity() {
         val kmInput = createEditText(settings.getMinKmValue().toString(), InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL)
         root.addView(kmInput)
 
+        val confirmHideCheck = CheckBox(this).apply {
+            text = "Pedir confirmação ao ocultar viagens com valor R$/km abaixo da meta"
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            isChecked = settings.getConfirmHideBelowMinKm()
+            setPadding(0, dp(8), 0, dp(12))
+        }
+        root.addView(confirmHideCheck)
+
         root.addView(createLabel("Meta R$ / Hora (ex: 45.0)"))
         val hourInput = createEditText(settings.getMinHourValue().toString(), InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL)
         root.addView(hourInput)
@@ -68,6 +77,7 @@ class SettingsActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(-1, dp(60)).apply { setMargins(0, dp(40), 0, dp(50)) }
             setOnClickListener {
                 settings.setMinKmValue(kmInput.text.toString().toFloatOrNull() ?: 2.0f)
+                settings.setConfirmHideBelowMinKm(confirmHideCheck.isChecked)
                 settings.setMinHourValue(hourInput.text.toString().toFloatOrNull() ?: 45.0f)
                 
                 selectedColors.forEach { (key, color) ->

@@ -32,6 +32,8 @@ import android.webkit.WebViewClient
 import android.net.Uri
 import android.widget.ScrollView
 import android.widget.Button
+import android.widget.EditText
+import android.text.InputType
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -875,6 +877,39 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        val minKm = settingsManager.getMinKmValue().toDouble()
+        val confirmBelowMin = settingsManager.getConfirmHideBelowMinKm()
+        val topRide = currentActiveRoutes.firstOrNull()
+
+        val valuePerKm = if (topRide != null && topRide.earningsPerKm > 0) {
+            topRide.earningsPerKm
+        } else if (topRide != null && topRide.distanceKm > 0) {
+            topRide.price / topRide.distanceKm
+        } else {
+            0.0
+        }
+
+        if (topRide != null && valuePerKm < minKm && confirmBelowMin) {
+            val formattedKmVal = String.format(Locale.getDefault(), "R$ %.2f/km", valuePerKm)
+            val formattedMinKm = String.format(Locale.getDefault(), "R$ %.2f/km", minKm)
+
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("🙈 Confirmar Ocultar Viagem")
+                .setMessage(
+                    "A viagem do topo está com o valor de $formattedKmVal, que é MENOR do que a meta mínima de $formattedMinKm configurada.\n\n" +
+                    "• Passageiro: ${topRide.passenger}\n" +
+                    "• Valor Total: R$ ${String.format(Locale.getDefault(), "%.2f", topRide.price)}\n\n" +
+                    "Deseja realmente confirmar e simular o gesto para ocultar esta viagem no inDrive?"
+                )
+                .setPositiveButton("Sim, Ocultar no inDrive") { _, _ ->
+                    com.uberanalyzer.service.UberAccessibilityService.triggerHideTopTrip(this)
+                    Toast.makeText(this, "🙈 Simulando toque e deslize do dedo no inDrive...", Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("Cancelar", null)
+                .show()
+            return
+        }
+
         // Dispatch swipe gesture (left-to-right) via Accessibility Service to simulate finger swipe over inDrive app on left side
         com.uberanalyzer.service.UberAccessibilityService.triggerHideTopTrip(this)
         Toast.makeText(this, "🙈 Simulando toque e deslize do dedo no inDrive...", Toast.LENGTH_SHORT).show()
@@ -1311,9 +1346,46 @@ class MainActivity : AppCompatActivity() {
             setTextColor(Color.WHITE)
             textSize = 13f
             isChecked = settingsManager.getShowRouteMetrics()
-            setPadding(dp(8), dp(6), dp(8), dp(12))
+            setPadding(dp(8), dp(6), dp(8), dp(6))
         }
         dialogView.addView(showMetricsCheck)
+
+        // --- Seção: Meta de Valor/KM e Confirmação ao Ocultar ---
+        val kmLabel = TextView(this).apply {
+            text = "💰 REGRAS DE VALOR MÍNIMO E OCULTAÇÃO"
+            textSize = 12f
+            setTextColor(Color.parseColor("#38BDF8"))
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(12), 0, dp(6))
+        }
+        dialogView.addView(kmLabel)
+
+        val kmInputLabel = TextView(this).apply {
+            text = "Valor Mínimo R$/KM para Ocultar (ex: 2.00):"
+            textSize = 13f
+            setTextColor(Color.parseColor("#E2E8F0"))
+            setPadding(0, dp(2), 0, dp(4))
+        }
+        dialogView.addView(kmInputLabel)
+
+        val minKmInput = EditText(this).apply {
+            setText(String.format(Locale.US, "%.2f", settingsManager.getMinKmValue()))
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#1E293B"))
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) }
+        }
+        dialogView.addView(minKmInput)
+
+        val confirmHideCheck = android.widget.CheckBox(this).apply {
+            text = "⚠️ Pedir confirmação ao ocultar viagens com valor menor que a meta (R$/km)"
+            setTextColor(Color.WHITE)
+            textSize = 13f
+            isChecked = settingsManager.getConfirmHideBelowMinKm()
+            setPadding(dp(8), dp(4), dp(8), dp(12))
+        }
+        dialogView.addView(confirmHideCheck)
 
         scrollContainer.addView(dialogView)
 
@@ -1324,6 +1396,10 @@ class MainActivity : AppCompatActivity() {
                 settingsManager.setShowPassengerPhoto(showPhotoCheck.isChecked)
                 settingsManager.setShowPassengerName(showNameCheck.isChecked)
                 settingsManager.setShowRouteMetrics(showMetricsCheck.isChecked)
+
+                val parsedMinKm = minKmInput.text.toString().replace(",", ".").toFloatOrNull() ?: 2.0f
+                settingsManager.setMinKmValue(parsedMinKm)
+                settingsManager.setConfirmHideBelowMinKm(confirmHideCheck.isChecked)
 
                 pendingRoutes?.let { displayRoutesOnMap(it) }
                     ?: loadInitialQueueRoutes()
