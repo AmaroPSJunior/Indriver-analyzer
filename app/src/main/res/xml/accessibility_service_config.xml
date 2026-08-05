@@ -2,6 +2,7 @@
     android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewScrolled"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:canRetrieveWindowContent="true"
+    android:canPerformGestures="true"
     android:description="@string/app_name"
     android:packageNames="sinet.startup.inDriver,com.indriver.android,com.indrive.driver,com.indrive.passenger,com.indriver,com.ubercab.driver,com.ubercab"
     android:notificationTimeout="100"

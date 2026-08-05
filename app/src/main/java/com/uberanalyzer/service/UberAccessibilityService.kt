@@ -140,6 +140,12 @@ class UberAccessibilityService : AccessibilityService() {
         sendBroadcast(intent)
     }
 
+    private val hideTripReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: Intent?) {
+            performSwipeHideFirstItem()
+        }
+    }
+
     override fun onInterrupt() {}
 
     /**
@@ -151,11 +157,13 @@ class UberAccessibilityService : AccessibilityService() {
             val width = displayMetrics.widthPixels.toFloat()
             val height = displayMetrics.heightPixels.toFloat()
 
-            // Left-to-right swipe gesture on top monitored item in inDrive (left half in split-screen mode: ~8% to ~42% width, at ~28% height)
-            val startX = width * 0.08f
-            val endX = width * 0.42f
-            val startY = height * 0.28f
-            val endY = height * 0.28f
+            // Left-to-right swipe gesture simulating a physical finger sliding across the tablet screen
+            // In split-screen mode (inDrive on the left half):
+            // Start from ~6% width to ~44% width (horizontal swipe) on the top trip card (~25% screen height)
+            val startX = width * 0.06f
+            val endX = width * 0.44f
+            val startY = height * 0.25f
+            val endY = height * 0.25f
 
             val path = android.graphics.Path().apply {
                 moveTo(startX, startY)
@@ -163,13 +171,13 @@ class UberAccessibilityService : AccessibilityService() {
             }
 
             val gestureBuilder = android.accessibilityservice.GestureDescription.Builder()
-            val stroke = android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 260)
+            val stroke = android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 250)
             gestureBuilder.addStroke(stroke)
 
             val success = dispatchGesture(gestureBuilder.build(), object : GestureResultCallback() {
                 override fun onCompleted(gestureDescription: android.accessibilityservice.GestureDescription?) {
                     super.onCompleted(gestureDescription)
-                    sendDebugLog("🖐️ Gesto de deslizar (esquerda ➔ direita) realizado no inDrive para ocultar viagem!")
+                    sendDebugLog("🖐️ Gesto de toque/deslize (esquerda ➔ direita) executado com sucesso no inDrive!")
                 }
 
                 override fun onCancelled(gestureDescription: android.accessibilityservice.GestureDescription?) {
@@ -178,7 +186,7 @@ class UberAccessibilityService : AccessibilityService() {
                 }
             }, null)
 
-            sendDebugLog("👆 Disparando gesto de deslizar esquerda ➔ direita para ocultar viagem topo...")
+            sendDebugLog("👆 Disparando toque/deslize físico na tela (x: ${startX.toInt()}➔${endX.toInt()}, y: ${startY.toInt()})...")
             success
         } catch (e: Exception) {
             Log.e("UberAccessibility", "Erro ao disparar gesto de ocultar: ${e.message}")
@@ -189,11 +197,26 @@ class UberAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        try {
+            val filter = android.content.IntentFilter("com.uberanalyzer.ACTION_HIDE_INDRIVE_TOP_TRIP")
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(hideTripReceiver, filter, RECEIVER_EXPORTED)
+            } else {
+                registerReceiver(hideTripReceiver, filter)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         sendDebugLog("⚡ Leitor inDriver pronto para capturar corridas e ocultar viagens!")
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            unregisterReceiver(hideTripReceiver)
+        } catch (e: Exception) {
+            // ignore
+        }
         if (instance == this) {
             instance = null
         }

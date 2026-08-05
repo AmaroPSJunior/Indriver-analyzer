@@ -861,9 +861,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun hideTopRideAndCascade(rideIndex: Int = 0) {
-        // Dispatch swipe gesture (left-to-right) via Accessibility Service to hide trip in inDrive app on left side
+        if (com.uberanalyzer.service.UberAccessibilityService.instance == null) {
+            Toast.makeText(
+                this,
+                "⚠️ Serviço de Acessibilidade desativado! Ative-o em Configurações ➔ Acessibilidade para permitir a simulação do toque na tela.",
+                Toast.LENGTH_LONG
+            ).show()
+            try {
+                startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            return
+        }
+
+        // Dispatch swipe gesture (left-to-right) via Accessibility Service to simulate finger swipe over inDrive app on left side
         com.uberanalyzer.service.UberAccessibilityService.triggerHideTopTrip(this)
-        Toast.makeText(this, "🙈 Gesto de ocultar (deslizar) enviado ao inDrive!", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "🙈 Simulando toque e deslize do dedo no inDrive...", Toast.LENGTH_SHORT).show()
     }
 
     private fun renderCardsAndMapUi(limitedRoutes: List<RouteData>, jsRoutesArray: JSONArray) {
