@@ -330,6 +330,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        val titleScrollView = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+        }
+
         val titleRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -338,33 +343,9 @@ class MainActivity : AppCompatActivity() {
         titleText = TextView(this).apply {
             text = "⚡ inDrive Analyzer ${getAppVersionName()}"
             setTextColor(Color.WHITE)
-            textSize = 16f
+            textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
-            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
-        }
-
-        val jsonBtn = Button(this).apply {
-            text = "📜 JSON"
-            textSize = 11f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#059669"))
-            setPadding(dp(10), dp(4), dp(10), dp(4))
-            layoutParams = LinearLayout.LayoutParams(-2, -2).apply {
-                setMargins(dp(6), 0, 0, 0)
-            }
-            setOnClickListener { showDetectedJsonDialog() }
-        }
-
-        val permChecklistBtn = Button(this).apply {
-            text = "📋 Permissões"
-            textSize = 11f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#0284C7"))
-            setPadding(dp(10), dp(4), dp(10), dp(4))
-            layoutParams = LinearLayout.LayoutParams(-2, -2).apply {
-                setMargins(dp(6), 0, 0, 0)
-            }
-            setOnClickListener { showPermissionChecklistDialog() }
+            setPadding(0, 0, dp(8), 0)
         }
 
         val refreshButton = Button(this).apply {
@@ -374,7 +355,7 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor("#10B981"))
             setPadding(dp(10), dp(4), dp(10), dp(4))
             layoutParams = LinearLayout.LayoutParams(-2, -2).apply {
-                setMargins(dp(6), 0, 0, 0)
+                setMargins(dp(4), 0, 0, 0)
             }
             setOnClickListener {
                 if (currentActiveRoutes.isNotEmpty()) {
@@ -387,30 +368,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        val configButton = Button(this).apply {
-            text = "⚙️ Config"
-            textSize = 11f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#4F46E5"))
-            setPadding(dp(10), dp(4), dp(10), dp(4))
-            layoutParams = LinearLayout.LayoutParams(-2, -2).apply {
-                setMargins(dp(6), 0, 0, 0)
-            }
-            setOnClickListener { showMapSettingsDialog() }
-        }
-
-        val splitScreenButton = Button(this).apply {
-            text = "📱 Dividir Tela"
-            textSize = 11f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#8B5CF6"))
-            setPadding(dp(10), dp(4), dp(10), dp(4))
-            layoutParams = LinearLayout.LayoutParams(-2, -2).apply {
-                setMargins(dp(6), 0, 0, 0)
-            }
-            setOnClickListener { launchSplitScreenWithInDrive(force = true) }
-        }
-
         val hideTopBtn = Button(this).apply {
             text = "🙈 Ocultar Viagem"
             textSize = 11f
@@ -418,19 +375,29 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor("#E11D48"))
             setPadding(dp(10), dp(4), dp(10), dp(4))
             layoutParams = LinearLayout.LayoutParams(-2, -2).apply {
-                setMargins(dp(6), 0, 0, 0)
+                setMargins(dp(4), 0, 0, 0)
             }
             setOnClickListener { hideTopRideAndCascade(0) }
         }
 
+        val configButton = Button(this).apply {
+            text = "⚙️ Configurações"
+            textSize = 11f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#4F46E5"))
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+            layoutParams = LinearLayout.LayoutParams(-2, -2).apply {
+                setMargins(dp(4), 0, 0, 0)
+            }
+            setOnClickListener { showMapSettingsDialog() }
+        }
+
         titleRow.addView(titleText)
-        titleRow.addView(jsonBtn)
-        titleRow.addView(permChecklistBtn)
         titleRow.addView(refreshButton)
-        titleRow.addView(splitScreenButton)
         titleRow.addView(hideTopBtn)
         titleRow.addView(configButton)
-        header.addView(titleRow)
+        titleScrollView.addView(titleRow)
+        header.addView(titleScrollView)
 
         accStatusView = TextView(this).apply {
             textSize = 11f
@@ -1186,26 +1153,121 @@ class MainActivity : AppCompatActivity() {
 
     private fun showMapSettingsDialog() {
         val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
-        val dialogView = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(16), dp(20), dp(16))
+        
+        var dialog: androidx.appcompat.app.AlertDialog? = null
+
+        val scrollContainer = ScrollView(this).apply {
             setBackgroundColor(Color.parseColor("#0F172A"))
         }
 
+        val dialogView = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(20), dp(20), dp(20))
+        }
+
         val title = TextView(this).apply {
-            text = "⚙️ Configurações da Tela & Mapa"
+            text = "⚙️ Configurações & Ferramentas"
             textSize = 18f
             setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, 0, 0, dp(12))
+            setPadding(0, 0, 0, dp(14))
         }
         dialogView.addView(title)
 
+        // --- Seção: Ferramentas & Ações Rápida ---
+        val toolsLabel = TextView(this).apply {
+            text = "🛠️ FERRAMENTAS & ATALHOS"
+            textSize = 12f
+            setTextColor(Color.parseColor("#38BDF8"))
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, 0, 0, dp(8))
+        }
+        dialogView.addView(toolsLabel)
+
+        val toolsContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#1E293B"))
+                cornerRadius = dp(10).toFloat()
+                setStroke(dp(1), Color.parseColor("#334155"))
+            }
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(16)) }
+        }
+
+        val jsonBtn = Button(this).apply {
+            text = "📜 Dados Detectados (JSON)"
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#059669"))
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) }
+            setOnClickListener {
+                dialog?.dismiss()
+                showDetectedJsonDialog()
+            }
+        }
+
+        val permBtn = Button(this).apply {
+            text = "📋 Checklist de Permissões"
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#0284C7"))
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) }
+            setOnClickListener {
+                dialog?.dismiss()
+                showPermissionChecklistDialog()
+            }
+        }
+
+        val splitBtn = Button(this).apply {
+            text = "📱 Dividir Tela com inDrive"
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#8B5CF6"))
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) }
+            setOnClickListener {
+                dialog?.dismiss()
+                launchSplitScreenWithInDrive(force = true)
+            }
+        }
+
+        val advSettingsBtn = Button(this).apply {
+            text = "🎨 Metas de Valores & Cores Avançadas"
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#4F46E5"))
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            layoutParams = LinearLayout.LayoutParams(-1, -2)
+            setOnClickListener {
+                dialog?.dismiss()
+                startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
+            }
+        }
+
+        toolsContainer.addView(jsonBtn)
+        toolsContainer.addView(permBtn)
+        toolsContainer.addView(splitBtn)
+        toolsContainer.addView(advSettingsBtn)
+        dialogView.addView(toolsContainer)
+
+        // --- Seção: Exibição do Mapa ---
+        val mapLabel = TextView(this).apply {
+            text = "🗺️ EXIBIÇÃO DO MAPA & CARDS"
+            textSize = 12f
+            setTextColor(Color.parseColor("#38BDF8"))
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, 0, 0, dp(8))
+        }
+        dialogView.addView(mapLabel)
+
         val maxRoutesText = TextView(this).apply {
             text = "Quantidade de Rotas no Mapa: ${settingsManager.getMaxRoutes()} (Máximo 10)"
-            textSize = 14f
+            textSize = 13f
             setTextColor(Color.parseColor("#E2E8F0"))
-            setPadding(0, dp(8), 0, dp(4))
+            setPadding(0, dp(4), 0, dp(6))
         }
         dialogView.addView(maxRoutesText)
 
@@ -1224,7 +1286,7 @@ class MainActivity : AppCompatActivity() {
                 setBackgroundColor(if (currentMax == count) Color.parseColor("#38BDF8") else Color.parseColor("#334155"))
                 setPadding(dp(8), dp(4), dp(8), dp(4))
                 layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply {
-                    setMargins(dp(4), 0, dp(4), 0)
+                    setMargins(dp(3), 0, dp(3), 0)
                 }
                 setOnClickListener {
                     currentMax = count
@@ -1267,8 +1329,10 @@ class MainActivity : AppCompatActivity() {
         }
         dialogView.addView(showMetricsCheck)
 
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setView(dialogView)
+        scrollContainer.addView(dialogView)
+
+        dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setView(scrollContainer)
             .setPositiveButton("Salvar e Atualizar") { _, _ ->
                 settingsManager.setMaxRoutes(currentMax)
                 settingsManager.setShowPassengerPhoto(showPhotoCheck.isChecked)
