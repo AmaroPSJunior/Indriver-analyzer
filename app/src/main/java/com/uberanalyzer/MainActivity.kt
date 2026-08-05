@@ -1525,7 +1525,7 @@ class MainActivity : AppCompatActivity() {
             createStepCard(
                 stepNumber = "1️⃣ PASSO 1",
                 title = "Configuração Restrita (Android 13/14+)",
-                description = "Se aparecer a mensagem 'Configuração Restrita' na Acessibilidade:\n1. Toque no botão abaixo para 'Informações do App'.\n2. No canto superior direito, toque nos 3 pontinhos (⋮).\n3. Selecione 'Permitir configurações restritas'.",
+                description = "Se a opção nos 3 pontinhos (⋮) NÃO aparecer:\n1º Abra o PASSO 2 (Acessibilidade) PRIMEIRO e tente ativar o inDrive Analyzer para o Android gerar o aviso de 'Configuração Restrita'.\n2º Volte aqui e toque no botão abaixo para abrir 'Informações do App'.\n3º No canto superior direito da tela que abrir, toque nos 3 pontinhos (⋮) e selecione 'Permitir configurações restritas'.",
                 isGranted = accOk,
                 isOptional = false,
                 buttonText = "⚙️ Abrir Informações do App (3 Pontinhos ⋮)",
@@ -1533,8 +1533,10 @@ class MainActivity : AppCompatActivity() {
                     try {
                         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                             data = Uri.parse("package:$packageName")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
                         startActivity(intent)
+                        Toast.makeText(this, "No canto superior direito, toque nos 3 pontinhos (⋮) -> Permitir configurações restritas", Toast.LENGTH_LONG).show()
                     } catch (e: Exception) {
                         Toast.makeText(this, "Abra Configurações do Celular -> Aplicativos -> inDrive Analyzer", Toast.LENGTH_LONG).show()
                     }
