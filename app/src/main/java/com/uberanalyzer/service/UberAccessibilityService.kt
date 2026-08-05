@@ -142,32 +142,37 @@ class UberAccessibilityService : AccessibilityService() {
 
     private val hideTripReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: android.content.Context?, intent: Intent?) {
-            performSwipeHideFirstItem()
+            val idx = intent?.getIntExtra("item_index", 0) ?: 0
+            performSwipeHideItem(idx)
         }
     }
 
     override fun onInterrupt() {}
 
     /**
-     * Executes a left-to-right swipe gesture on the first item in the inDrive list to hide/dismiss the trip
+     * Executes a left-to-right swipe gesture on a specific item (index 0, 1, or 2) in the inDrive list to hide/dismiss the trip
      */
-    fun performSwipeHideFirstItem(): Boolean {
+    fun performSwipeHideItem(itemIndex: Int = 0): Boolean {
         return try {
             val displayMetrics = resources.displayMetrics
             val width = displayMetrics.widthPixels.toFloat()
             val height = displayMetrics.heightPixels.toFloat()
 
-            // Left-to-right swipe gesture simulating a physical finger sliding across the tablet screen
-            // In split-screen mode (inDrive on the left half):
-            // Start from ~6% width to ~44% width (horizontal swipe) on the top trip card (~25% screen height)
+            // Horizontal swipe in split screen mode (left side): ~6% to ~44% width
             val startX = width * 0.06f
             val endX = width * 0.44f
-            val startY = height * 0.25f
-            val endY = height * 0.25f
+
+            // Position Y corresponding to item index (index 0 = ~25%, index 1 = ~40%, index 2 = ~55%)
+            val targetYRatio = when (itemIndex) {
+                1 -> 0.40f
+                2 -> 0.55f
+                else -> 0.25f
+            }
+            val targetY = height * targetYRatio
 
             val path = android.graphics.Path().apply {
-                moveTo(startX, startY)
-                lineTo(endX, endY)
+                moveTo(startX, targetY)
+                lineTo(endX, targetY)
             }
 
             val gestureBuilder = android.accessibilityservice.GestureDescription.Builder()
@@ -177,7 +182,7 @@ class UberAccessibilityService : AccessibilityService() {
             val success = dispatchGesture(gestureBuilder.build(), object : GestureResultCallback() {
                 override fun onCompleted(gestureDescription: android.accessibilityservice.GestureDescription?) {
                     super.onCompleted(gestureDescription)
-                    sendDebugLog("🖐️ Gesto de toque/deslize (esquerda ➔ direita) executado com sucesso no inDrive!")
+                    sendDebugLog("🖐️ Gesto de deslizar (item ${itemIndex + 1}) executado no inDrive!")
                 }
 
                 override fun onCancelled(gestureDescription: android.accessibilityservice.GestureDescription?) {
@@ -186,7 +191,7 @@ class UberAccessibilityService : AccessibilityService() {
                 }
             }, null)
 
-            sendDebugLog("👆 Disparando toque/deslize físico na tela (x: ${startX.toInt()}➔${endX.toInt()}, y: ${startY.toInt()})...")
+            sendDebugLog("👆 Disparando toque/deslize físico na tela para item ${itemIndex + 1} (Y: ${targetY.toInt()})...")
             success
         } catch (e: Exception) {
             Log.e("UberAccessibility", "Erro ao disparar gesto de ocultar: ${e.message}")
@@ -229,13 +234,14 @@ class UberAccessibilityService : AccessibilityService() {
         private var lastLogTime = 0L
         private var lastFullText = ""
 
-        fun triggerHideTopTrip(context: android.content.Context) {
+        fun triggerHideTopTrip(context: android.content.Context, itemIndex: Int = 0) {
             val activeInstance = instance
             if (activeInstance != null) {
-                activeInstance.performSwipeHideFirstItem()
+                activeInstance.performSwipeHideItem(itemIndex)
             } else {
                 val intent = Intent("com.uberanalyzer.ACTION_HIDE_INDRIVE_TOP_TRIP").apply {
                     setPackage(context.packageName)
+                    putExtra("item_index", itemIndex)
                 }
                 context.sendBroadcast(intent)
             }

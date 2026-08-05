@@ -370,16 +370,24 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        val hideTopBtn = Button(this).apply {
-            text = "🙈 Ocultar Viagem"
+        val autoHideSwitch = androidx.appcompat.widget.SwitchCompat(this).apply {
+            text = "⚡ Auto-Ocultar "
             textSize = 11f
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#E11D48"))
-            setPadding(dp(10), dp(4), dp(10), dp(4))
+            isChecked = settingsManager.getAutoHideEnabled()
+            setPadding(dp(6), dp(2), dp(6), dp(2))
             layoutParams = LinearLayout.LayoutParams(-2, -2).apply {
                 setMargins(dp(4), 0, 0, 0)
             }
-            setOnClickListener { hideTopRideAndCascade(0) }
+            setOnCheckedChangeListener { _, isChecked ->
+                settingsManager.setAutoHideEnabled(isChecked)
+                if (isChecked) {
+                    Toast.makeText(this@MainActivity, "⚡ Auto-Ocultar ATIVADO (Analisando até o 3º item)...", Toast.LENGTH_SHORT).show()
+                    evaluateAndAutoHideTrips()
+                } else {
+                    Toast.makeText(this@MainActivity, "⏸️ Auto-Ocultar DESATIVADO", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
 
         val configButton = Button(this).apply {
@@ -396,7 +404,7 @@ class MainActivity : AppCompatActivity() {
 
         titleRow.addView(titleText)
         titleRow.addView(refreshButton)
-        titleRow.addView(hideTopBtn)
+        titleRow.addView(autoHideSwitch)
         titleRow.addView(configButton)
         titleScrollView.addView(titleRow)
         header.addView(titleScrollView)
@@ -911,8 +919,56 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Dispatch swipe gesture (left-to-right) via Accessibility Service to simulate finger swipe over inDrive app on left side
-        com.uberanalyzer.service.UberAccessibilityService.triggerHideTopTrip(this)
+        com.uberanalyzer.service.UberAccessibilityService.triggerHideTopTrip(this, itemIndex = rideIndex)
         Toast.makeText(this, "🙈 Simulando toque e deslize do dedo no inDrive...", Toast.LENGTH_SHORT).show()
+    }
+
+    private var lastAutoHideTime = 0L
+
+    fun evaluateAndAutoHideTrips() {
+        if (!settingsManager.getAutoHideEnabled()) return
+        if (com.uberanalyzer.service.UberAccessibilityService.instance == null) return
+
+        val now = System.currentTimeMillis()
+        if (now - lastAutoHideTime < 1200) return // Cooldown between gesture executions
+
+        val minKm = settingsManager.getMinKmValue().toDouble()
+        val routes = currentActiveRoutes
+        if (routes.isEmpty()) return
+
+        // Analyze top 3 items from top to bottom (index 0, 1, 2)
+        val maxCheck = minOf(3, routes.size)
+        for (i in 0 until maxCheck) {
+            val ride = routes[i]
+            val valuePerKm = if (ride.earningsPerKm > 0) {
+                ride.earningsPerKm
+            } else if (ride.distanceKm > 0) {
+                ride.price / ride.distanceKm
+            } else {
+                0.0
+            }
+
+            // Check if trip R$/km is LESS than the configured minimum meta
+            if (valuePerKm < minKm) {
+                lastAutoHideTime = now
+                val formattedVal = String.format(Locale.getDefault(), "R$ %.2f/km", valuePerKm)
+                val formattedMin = String.format(Locale.getDefault(), "R$ %.2f/km", minKm)
+
+                Toast.makeText(
+                    this,
+                    "⚡ Auto-Ocultar: Item ${i + 1} ($formattedVal < $formattedMin) ➔ Ocultando no inDrive...",
+                    Toast.LENGTH_SHORT
+                ).show()
+
+                // Dispatch swipe gesture for item index i
+                com.uberanalyzer.service.UberAccessibilityService.triggerHideTopTrip(this, itemIndex = i)
+
+                // Stop after hiding the first matching item in this evaluation cycle
+                break
+            }
+            // If valuePerKm >= minKm, loop continues to check the next item (up to 3 items).
+            // If all 3 items have valuePerKm >= minKm, nothing happens!
+        }
     }
 
     private fun renderCardsAndMapUi(limitedRoutes: List<RouteData>, jsRoutesArray: JSONArray) {
@@ -1035,6 +1091,9 @@ class MainActivity : AppCompatActivity() {
         } else {
             webView.loadUrl(jsCall)
         }
+
+        // Trigger Auto-Hide evaluation on active routes if switch is ON
+        evaluateAndAutoHideTrips()
     }
 
     private fun cleanAddressForGeocoding(rawAddress: String): String {
@@ -1378,8 +1437,17 @@ class MainActivity : AppCompatActivity() {
         }
         dialogView.addView(minKmInput)
 
+        val autoHideCheck = android.widget.CheckBox(this).apply {
+            text = "⚡ Ativar Auto-Ocultar automático para viagens abaixo do valor R$/km mínimo"
+            setTextColor(Color.WHITE)
+            textSize = 13f
+            isChecked = settingsManager.getAutoHideEnabled()
+            setPadding(dp(8), dp(4), dp(8), dp(6))
+        }
+        dialogView.addView(autoHideCheck)
+
         val confirmHideCheck = android.widget.CheckBox(this).apply {
-            text = "⚠️ Pedir confirmação ao ocultar viagens com valor menor que a meta (R$/km)"
+            text = "⚠️ Pedir confirmação ao ocultar manualmente viagens com valor menor que a meta (R$/km)"
             setTextColor(Color.WHITE)
             textSize = 13f
             isChecked = settingsManager.getConfirmHideBelowMinKm()
@@ -1396,6 +1464,7 @@ class MainActivity : AppCompatActivity() {
                 settingsManager.setShowPassengerPhoto(showPhotoCheck.isChecked)
                 settingsManager.setShowPassengerName(showNameCheck.isChecked)
                 settingsManager.setShowRouteMetrics(showMetricsCheck.isChecked)
+                settingsManager.setAutoHideEnabled(autoHideCheck.isChecked)
 
                 val parsedMinKm = minKmInput.text.toString().replace(",", ".").toFloatOrNull() ?: 2.0f
                 settingsManager.setMinKmValue(parsedMinKm)
@@ -1403,6 +1472,10 @@ class MainActivity : AppCompatActivity() {
 
                 pendingRoutes?.let { displayRoutesOnMap(it) }
                     ?: loadInitialQueueRoutes()
+
+                if (autoHideCheck.isChecked) {
+                    evaluateAndAutoHideTrips()
+                }
             }
             .setNegativeButton("Cancelar", null)
             .show()

@@ -12,6 +12,7 @@ class SettingsManager(context: Context) {
         const val KEY_MIN_KM_VALUE = "min_km_value"
         const val KEY_MIN_HOUR_VALUE = "min_hour_value"
         const val KEY_CONFIRM_HIDE_BELOW_MIN_KM = "confirm_hide_below_min_km"
+        const val KEY_AUTO_HIDE_ENABLED = "auto_hide_enabled"
         
         // Category Colors
         const val KEY_COLOR_UBER_X = "color_uber_x"
@@ -52,6 +53,9 @@ class SettingsManager(context: Context) {
 
     fun getConfirmHideBelowMinKm(): Boolean = prefs.getBoolean(KEY_CONFIRM_HIDE_BELOW_MIN_KM, true)
     fun setConfirmHideBelowMinKm(value: Boolean) = prefs.edit().putBoolean(KEY_CONFIRM_HIDE_BELOW_MIN_KM, value).apply()
+
+    fun getAutoHideEnabled(): Boolean = prefs.getBoolean(KEY_AUTO_HIDE_ENABLED, false)
+    fun setAutoHideEnabled(value: Boolean) = prefs.edit().putBoolean(KEY_AUTO_HIDE_ENABLED, value).apply()
 
     fun getMinHourValue(): Float = prefs.getFloat(KEY_MIN_HOUR_VALUE, DEFAULT_MIN_HOUR)
     fun setMinHourValue(value: Float) = prefs.edit().putFloat(KEY_MIN_HOUR_VALUE, value).apply()
