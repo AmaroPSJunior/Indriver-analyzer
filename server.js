@@ -642,6 +642,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
         async function fetchRides() {
             try {
                 const res = await fetch('/api/rides');
+                if (!res.ok) return;
                 const data = await res.json();
                 if (Array.isArray(data)) {
                     const validRides = data.filter(isRideValidAndComplete);
@@ -662,7 +663,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
                     }
                 }
             } catch (e) {
-                console.error("Erro ao buscar corridas:", e);
+                console.warn("Aviso ao buscar corridas:", e && e.message ? e.message : e);
             }
         }
 
@@ -675,7 +676,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
                 renderRideList();
                 drawRoutesOnMap();
             } catch (e) {
-                console.error("Erro ao limpar filas:", e);
+                console.warn("Aviso ao limpar filas:", e && e.message ? e.message : e);
             }
         }
 
@@ -684,7 +685,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
                 await fetch('/api/rides/' + id, { method: 'DELETE' });
                 await fetchRides();
             } catch (e) {
-                console.error("Erro ao aceitar/remover corrida:", e);
+                console.warn("Aviso ao aceitar/remover corrida:", e && e.message ? e.message : e);
             }
         }
 
@@ -703,7 +704,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
                 drawRoutesOnMap();
                 await fetchRides();
             } catch (e) {
-                console.error("Erro ao ocultar corrida:", e);
+                console.warn("Aviso ao ocultar corrida:", e && e.message ? e.message : e);
             }
         }
 
@@ -1106,6 +1107,16 @@ const HTML_CONTENT = `<!DOCTYPE html>
 const server = http.createServer(async (req, res) => {
   const urlPath = req.url?.split('?')[0] || '/';
   const method = req.method || 'GET';
+
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, PUT, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+
+  if (method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
 
   if (urlPath === '/' || urlPath === '/index.html') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
