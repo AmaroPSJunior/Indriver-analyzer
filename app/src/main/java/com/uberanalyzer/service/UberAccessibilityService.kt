@@ -158,9 +158,10 @@ class UberAccessibilityService : AccessibilityService() {
             val width = displayMetrics.widthPixels.toFloat()
             val height = displayMetrics.heightPixels.toFloat()
 
-            // Horizontal swipe in split screen mode (left side): ~6% to ~44% width
-            val startX = width * 0.06f
-            val endX = width * 0.44f
+            // Horizontal swipe in split screen mode (left side): ~15% to ~45% width
+            // Starting at 15% avoids the Android 10+ System Back Gesture edge zone (0% to ~10%)
+            val startX = width * 0.15f
+            val endX = width * 0.45f
 
             // Position Y corresponding to item index (index 0 = ~25%, index 1 = ~40%, index 2 = ~55%)
             val targetYRatio = when (itemIndex) {
@@ -176,7 +177,7 @@ class UberAccessibilityService : AccessibilityService() {
             }
 
             val gestureBuilder = android.accessibilityservice.GestureDescription.Builder()
-            val stroke = android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 250)
+            val stroke = android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 280)
             gestureBuilder.addStroke(stroke)
 
             val success = dispatchGesture(gestureBuilder.build(), object : GestureResultCallback() {
@@ -187,15 +188,41 @@ class UberAccessibilityService : AccessibilityService() {
 
                 override fun onCancelled(gestureDescription: android.accessibilityservice.GestureDescription?) {
                     super.onCancelled(gestureDescription)
-                    sendDebugLog("⚠️ Gesto de deslizar cancelado pelo sistema Android.")
+                    sendDebugLog("⚠️ Gesto de deslizar cancelado pelo sistema Android (verifique se em modo split-screen).")
                 }
             }, null)
 
-            sendDebugLog("👆 Disparando toque/deslize físico na tela para item ${itemIndex + 1} (Y: ${targetY.toInt()})...")
+            // FALLBACK: Also attempt to click any decline/close/ocultar node in active window
+            try {
+                findAndClickDeclineNode(rootInActiveWindow)
+            } catch (e: Exception) {
+                // ignore node search errors
+            }
+
+            sendDebugLog("👆 Disparando toque/deslize físico na tela para item ${itemIndex + 1} (X: ${startX.toInt()}➔${endX.toInt()}, Y: ${targetY.toInt()})...")
             success
         } catch (e: Exception) {
             Log.e("UberAccessibility", "Erro ao disparar gesto de ocultar: ${e.message}")
             false
+        }
+    }
+
+    private fun findAndClickDeclineNode(node: AccessibilityNodeInfo?) {
+        if (node == null) return
+        val text = node.text?.toString()?.lowercase(java.util.Locale.getDefault()) ?: ""
+        val desc = node.contentDescription?.toString()?.lowercase(java.util.Locale.getDefault()) ?: ""
+        if (text.contains("ocultar") || text.contains("recusar") || desc.contains("ocultar") || desc.contains("recusar") || desc.contains("close") || desc.contains("fechar")) {
+            if (node.isClickable) {
+                node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                return
+            }
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i)
+            if (child != null) {
+                findAndClickDeclineNode(child)
+                try { child.recycle() } catch (e: Exception) {}
+            }
         }
     }
 

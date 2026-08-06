@@ -382,6 +382,18 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        val hideTopBtn = Button(this).apply {
+            text = "🙈 Ocultar Viagem"
+            textSize = 11f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#E11D48"))
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+            layoutParams = LinearLayout.LayoutParams(-2, -2).apply {
+                setMargins(dp(4), 0, 0, 0)
+            }
+            setOnClickListener { hideTopRideAndCascade(0) }
+        }
+
         val autoHideSwitch = androidx.appcompat.widget.SwitchCompat(this).apply {
             text = "⚡ Auto-Ocultar "
             textSize = 11f
@@ -416,6 +428,7 @@ class MainActivity : AppCompatActivity() {
 
         titleRow.addView(titleText)
         titleRow.addView(refreshButton)
+        titleRow.addView(hideTopBtn)
         titleRow.addView(autoHideSwitch)
         titleRow.addView(configButton)
         titleScrollView.addView(titleRow)
@@ -1029,8 +1042,19 @@ class MainActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
             }
 
+            val hideCardBtn = Button(this).apply {
+                text = "🙈 Ocultar"
+                textSize = 10f
+                setTextColor(Color.WHITE)
+                setBackgroundColor(Color.parseColor("#E11D48"))
+                setPadding(dp(6), dp(2), dp(6), dp(2))
+                layoutParams = LinearLayout.LayoutParams(-2, -2)
+                setOnClickListener { hideTopRideAndCascade(index) }
+            }
+
             topRow.addView(badge)
             topRow.addView(priceTitle)
+            topRow.addView(hideCardBtn)
             card.addView(topRow)
 
             val passRow = LinearLayout(this).apply {
