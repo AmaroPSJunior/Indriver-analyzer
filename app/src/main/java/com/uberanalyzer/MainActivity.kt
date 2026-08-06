@@ -911,59 +911,48 @@ class MainActivity : AppCompatActivity() {
         }
 
         val minKm = settingsManager.getMinKmValue().toDouble()
-        val confirmBelowMin = settingsManager.getConfirmHideBelowMinKm()
-        val topRide = currentActiveRoutes.firstOrNull()
+        val targetRide = currentActiveRoutes.getOrNull(rideIndex) ?: currentActiveRoutes.firstOrNull()
 
-        val valuePerKm = if (topRide != null && topRide.earningsPerKm > 0) {
-            topRide.earningsPerKm
-        } else if (topRide != null && topRide.distanceKm > 0) {
-            topRide.price / topRide.distanceKm
-        } else {
-            0.0
-        }
-
-        if (topRide != null && valuePerKm < minKm && confirmBelowMin) {
+        if (targetRide != null) {
+            val valuePerKm = if (targetRide.earningsPerKm > 0) targetRide.earningsPerKm else (if (targetRide.distanceKm > 0) targetRide.price / targetRide.distanceKm else 0.0)
             val formattedKmVal = String.format(Locale.getDefault(), "R$ %.2f/km", valuePerKm)
             val formattedMinKm = String.format(Locale.getDefault(), "R$ %.2f/km", minKm)
 
-            androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("🙈 Confirmar Ocultar Viagem")
-                .setMessage(
-                    "A viagem do topo está com o valor de $formattedKmVal, que é MENOR do que a meta mínima de $formattedMinKm configurada.\n\n" +
-                    "• Passageiro: ${topRide.passenger}\n" +
-                    "• Valor Total: R$ ${String.format(Locale.getDefault(), "%.2f", topRide.price)}\n\n" +
-                    "Deseja realmente confirmar e simular o gesto para ocultar esta viagem no inDrive?"
-                )
-                .setPositiveButton("Sim, Ocultar no inDrive") { _, _ ->
-                    com.uberanalyzer.service.UberAccessibilityService.triggerHideTopTrip(this)
-                    Toast.makeText(this, "🙈 Simulando toque e deslize do dedo no inDrive...", Toast.LENGTH_SHORT).show()
-                }
-                .setNegativeButton("Cancelar", null)
-                .show()
-            return
+            val tag = if (valuePerKm < minKm) "(Abaixo da Meta $formattedMinKm)" else "(Meta $formattedMinKm OK)"
+            Toast.makeText(
+                this,
+                "🙈 Ocultando corrida ${rideIndex + 1}: $formattedKmVal $tag...",
+                Toast.LENGTH_SHORT
+            ).show()
         }
 
-        // Dispatch swipe gesture (left-to-right) via Accessibility Service to simulate finger swipe over inDrive app on left side
+        // 1. Dispatch swipe gesture (left-to-right) via Accessibility Service
         com.uberanalyzer.service.UberAccessibilityService.triggerHideTopTrip(this, itemIndex = rideIndex)
-        Toast.makeText(this, "🙈 Simulando toque e deslize do dedo no inDrive...", Toast.LENGTH_SHORT).show()
+
+        // 2. Instantly remove hidden route locally and cascade next route to index 0 across both cards & map
+        if (currentActiveRoutes.isNotEmpty() && rideIndex in currentActiveRoutes.indices) {
+            currentActiveRoutes.removeAt(rideIndex)
+            displayRoutesOnMap(currentActiveRoutes)
+        }
     }
 
     private var lastAutoHideTime = 0L
 
     fun evaluateAndAutoHideTrips() {
         if (!settingsManager.getAutoHideEnabled()) return
-        if (com.uberanalyzer.service.UberAccessibilityService.instance == null) return
-
-        val now = System.currentTimeMillis()
-        if (now - lastAutoHideTime < 1200) return // Cooldown between gesture executions
 
         val minKm = settingsManager.getMinKmValue().toDouble()
         val routes = currentActiveRoutes
         if (routes.isEmpty()) return
 
-        // Analyze top 3 items from top to bottom (index 0, 1, 2)
+        val now = System.currentTimeMillis()
+        if (now - lastAutoHideTime < 1000) return // Cooldown between gesture executions
+
         val maxCheck = minOf(3, routes.size)
+        var hiddenIndex = -1
+
         for (i in 0 until maxCheck) {
+            if (i !in routes.indices) break
             val ride = routes[i]
             val valuePerKm = if (ride.earningsPerKm > 0) {
                 ride.earningsPerKm
@@ -974,31 +963,37 @@ class MainActivity : AppCompatActivity() {
             }
 
             // Check if trip R$/km is LESS than the configured minimum meta
-            if (valuePerKm < minKm) {
+            if (valuePerKm < minKm && valuePerKm > 0.0) {
                 lastAutoHideTime = now
+                hiddenIndex = i
                 val formattedVal = String.format(Locale.getDefault(), "R$ %.2f/km", valuePerKm)
                 val formattedMin = String.format(Locale.getDefault(), "R$ %.2f/km", minKm)
 
                 Toast.makeText(
                     this,
-                    "⚡ Auto-Ocultar: Item ${i + 1} ($formattedVal < $formattedMin) ➔ Ocultando no inDrive...",
+                    "⚡ Auto-Ocultar: Item ${i + 1} ($formattedVal < Meta $formattedMin) ➔ Ocultando no inDrive...",
                     Toast.LENGTH_SHORT
                 ).show()
 
                 // Dispatch swipe gesture for item index i
-                com.uberanalyzer.service.UberAccessibilityService.triggerHideTopTrip(this, itemIndex = i)
+                if (com.uberanalyzer.service.UberAccessibilityService.instance != null) {
+                    com.uberanalyzer.service.UberAccessibilityService.triggerHideTopTrip(this, itemIndex = i)
+                }
 
-                // Stop after hiding the first matching item in this evaluation cycle
                 break
             }
-            // If valuePerKm >= minKm, loop continues to check the next item (up to 3 items).
-            // If all 3 items have valuePerKm >= minKm, nothing happens!
+        }
+
+        if (hiddenIndex != -1 && hiddenIndex in currentActiveRoutes.indices) {
+            currentActiveRoutes.removeAt(hiddenIndex)
+            displayRoutesOnMap(currentActiveRoutes)
         }
     }
 
     private fun renderCardsAndMapUi(limitedRoutes: List<RouteData>, jsRoutesArray: JSONArray) {
         val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
         routesCardsContainer.removeAllViews()
+        val minKm = settingsManager.getMinKmValue().toDouble()
 
         limitedRoutes.forEachIndexed { index, route ->
             val colorHex = ROUTE_COLORS[index % ROUTE_COLORS.size]
@@ -1084,10 +1079,16 @@ class MainActivity : AppCompatActivity() {
             card.addView(passRow)
 
             if (settingsManager.getShowRouteMetrics()) {
+                val valuePerKm = if (route.earningsPerKm > 0) route.earningsPerKm else (if (route.distanceKm > 0) route.price / route.distanceKm else 0.0)
+                val isBelowMin = valuePerKm < minKm
+                val statusTag = if (isBelowMin) "⚠️ Abaixo da Meta" else "✔ Meta OK"
+                val statusColor = if (isBelowMin) Color.parseColor("#EF4444") else Color.parseColor("#22C55E")
+
                 val infoText = TextView(this).apply {
-                    text = String.format(Locale.getDefault(), "%.1f km • R$ %.2f/km • Score %.1f", route.distanceKm, route.earningsPerKm, route.score)
-                    setTextColor(Color.parseColor("#94A3B8"))
+                    text = String.format(Locale.getDefault(), "%.1f km • R$ %.2f/km (%s)", route.distanceKm, valuePerKm, statusTag)
+                    setTextColor(statusColor)
                     textSize = 11f
+                    typeface = Typeface.DEFAULT_BOLD
                     setPadding(0, dp(2), 0, dp(3))
                 }
                 card.addView(infoText)

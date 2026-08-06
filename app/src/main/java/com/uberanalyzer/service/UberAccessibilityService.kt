@@ -67,11 +67,28 @@ class UberAccessibilityService : AccessibilityService() {
         val settings = com.uberanalyzer.settings.SettingsManager(this)
         val minKm = settings.getMinKmValue().toDouble()
         val minHour = settings.getMinHourValue().toDouble()
+        val autoHide = settings.getAutoHideEnabled()
         val maxRoutes = settings.getMaxRoutes()
 
         val capturedRides = RideParser.parseInDriverList(text).take(maxRoutes)
         if (capturedRides.isNotEmpty()) {
             lastProcessedTime = now
+
+            // REAL-TIME AUTO-HIDE CHECK: Automatically execute hide gesture if ride earningsPerKm is below configured minKm
+            if (autoHide) {
+                for (i in capturedRides.indices) {
+                    val ride = capturedRides[i]
+                    val earningsPerKm = if (ride.earningsPerKm > 0) ride.earningsPerKm else (if (ride.totalDistanceKm > 0) ride.price / ride.totalDistanceKm else 0.0)
+                    if (earningsPerKm < minKm && earningsPerKm > 0.0) {
+                        val formattedVal = String.format(java.util.Locale.getDefault(), "R$ %.2f/km", earningsPerKm)
+                        val formattedMin = String.format(java.util.Locale.getDefault(), "R$ %.2f/km", minKm)
+                        sendDebugLog("⚡ Auto-Ocultar Ativo: Corrida ${i + 1} ($formattedVal < Meta $formattedMin). Disparando gesto de deslizar no inDrive...")
+                        performSwipeHideItem(i)
+                        break // Execute swipe for the first ride below threshold in this cycle
+                    }
+                }
+            }
+
             val jsonPayload = InDriverJsonFormatter.toFormattedJson(capturedRides)
             sendDebugLog("📥 Capturadas ${capturedRides.size} corridas (Máx $maxRoutes) na Lista de Espera inDriver!")
             
