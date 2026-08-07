@@ -1,0 +1,14 @@
+{
+  "name": "indriver-analyzer-android",
+  "version": "1.0.0",
+  "description": "Analisador de corridas inDrive — Lado a Lado com Múltiplas Rotas Coloridas Numeradas no Mapa e APK Android",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "build": "mkdir -p public/apk && (cp -f .build-outputs/app-debug.apk public/apk/app-debug.apk 2>/dev/null || cp -f app/build/outputs/apk/debug/app-debug.apk public/apk/app-debug.apk 2>/dev/null || true)",
+    "start": "node server.js"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
