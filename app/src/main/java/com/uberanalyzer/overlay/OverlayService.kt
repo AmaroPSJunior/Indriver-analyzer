@@ -252,9 +252,8 @@ class OverlayService : Service() {
         try { wm?.addView(view, wmParams) } catch (e: Exception) {}
 
 
-        // Auto hide after 25 seconds unless interacted
+        // Hiding overlay window must be done manually by the driver, not automatically
         autoDismissHandler?.removeCallbacksAndMessages(null)
-        autoDismissHandler?.postDelayed({ hide() }, 25000)
     }
 
     private fun createDefaultSampleJson(i: Intent): String {

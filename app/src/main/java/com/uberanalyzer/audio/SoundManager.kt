@@ -16,5 +16,23 @@ class SoundManager(context: Context) {
         }
     }
 
+    fun playHighProfitAlert() {
+        try {
+            Thread {
+                try {
+                    toneGenerator.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 250)
+                    Thread.sleep(300)
+                    toneGenerator.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 250)
+                    Thread.sleep(300)
+                    toneGenerator.startTone(ToneGenerator.TONE_SUP_PIP, 350)
+                } catch (e: Exception) {
+                    toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 400)
+                }
+            }.start()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     fun release() = toneGenerator.release()
 }

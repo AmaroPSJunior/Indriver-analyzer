@@ -192,6 +192,17 @@ class UberAccessibilityService : AccessibilityService() {
 
             val sourceName = if (isOcrSource) "ML Kit OCR (Pixels)" else "Acessibilidade (Nós)"
             sendDebugLog("📥 Capturadas ${capturedRides.size} corridas via $sourceName na Lista inDrive!")
+
+            // CHECK HIGH PROFIT ALERT THRESHOLD AND SOUND BEEP ALARM
+            val highProfitKmThreshold = settings.getHighProfitAlertKm().toDouble()
+            val hasHighProfitRide = capturedRides.any { ride ->
+                val eKm = if (ride.earningsPerKm > 0) ride.earningsPerKm else (if (ride.totalDistanceKm > 0) ride.price / ride.totalDistanceKm else 0.0)
+                eKm >= highProfitKmThreshold && eKm > 0.0
+            }
+            if (hasHighProfitRide) {
+                sendDebugLog("🔔 Corrida de Alta Lucratividade Detectada (>= R$ ${String.format(java.util.Locale.US, "%.2f", highProfitKmThreshold)}/km)! Disparando bip sonoro...")
+                com.uberanalyzer.audio.SoundManager(this).playHighProfitAlert()
+            }
             
             // SAVE TO HISTORY DATABASE
             val db = com.uberanalyzer.db.RideHistoryManager(this)

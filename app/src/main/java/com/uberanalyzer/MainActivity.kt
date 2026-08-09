@@ -606,17 +606,17 @@ class MainActivity : AppCompatActivity() {
                         text-align: center;
                     }
                     .origin-circle {
-                        width: 32px; height: 32px; border-radius: 50%;
+                        width: 42px; height: 42px; border-radius: 50%;
                         display: flex; align-items: center; justify-content: center;
-                        background: #22C55E; color: #FFFFFF; font-weight: 900; font-size: 16px;
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.85);
+                        background: #16A34A; color: #FFFFFF; font-weight: 900; font-size: 24px;
+                        box-shadow: 0 4px 14px rgba(0,0,0,0.9);
                         margin-top: 4px;
                     }
                     .destination-circle {
-                        width: 32px; height: 32px; border-radius: 50%;
+                        width: 42px; height: 42px; border-radius: 50%;
                         display: flex; align-items: center; justify-content: center;
-                        background: #F97316; color: #FFFFFF; font-weight: 900; font-size: 16px;
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.85);
+                        background: #EA580C; color: #FFFFFF; font-weight: 900; font-size: 24px;
+                        box-shadow: 0 4px 14px rgba(0,0,0,0.9);
                     }
                 </style>
             </head>
@@ -694,22 +694,22 @@ class MainActivity : AppCompatActivity() {
 
                                 var pickupHtml = '<div class="avatar-badge-container">' + 
                                     photoHtml + nameHtml +
-                                    '<div class="origin-circle" style="background-color: #22C55E; border: 3px solid ' + color + ';">⬆</div>' +
+                                    '<div class="origin-circle" style="background-color: #16A34A; border: 4px solid ' + color + ';">⬆️</div>' +
                                 '</div>';
 
-                                var dropoffHtml = '<div class="destination-circle" style="background-color: #F97316; border: 3px solid ' + color + ';">⬇</div>';
+                                var dropoffHtml = '<div class="destination-circle" style="background-color: #EA580C; border: 4px solid ' + color + ';">⬇️</div>';
 
                                 var pickupIcon = L.divIcon({
                                     className: '',
                                     html: pickupHtml,
-                                    iconSize: [52, 78],
-                                    iconAnchor: [26, 70]
+                                    iconSize: [60, 90],
+                                    iconAnchor: [30, 80]
                                 });
                                 var dropoffIcon = L.divIcon({
                                     className: '',
                                     html: dropoffHtml,
-                                    iconSize: [34, 34],
-                                    iconAnchor: [17, 17]
+                                    iconSize: [44, 44],
+                                    iconAnchor: [22, 22]
                                 });
 
                                 function isRealAddressJS(addr) {
@@ -1072,6 +1072,12 @@ class MainActivity : AppCompatActivity() {
         val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
         routesCardsContainer.removeAllViews()
         val minKm = settingsManager.getMinKmValue().toDouble()
+
+        val highProfitKmThreshold = settingsManager.getHighProfitAlertKm().toDouble()
+        val hasHighProfitRide = limitedRoutes.any { route -> route.earningsPerKm >= highProfitKmThreshold && route.earningsPerKm > 0.0 }
+        if (hasHighProfitRide) {
+            com.uberanalyzer.audio.SoundManager(this).playHighProfitAlert()
+        }
 
         limitedRoutes.forEachIndexed { index, route ->
             val colorHex = ROUTE_COLORS[index % ROUTE_COLORS.size]
@@ -1557,6 +1563,24 @@ class MainActivity : AppCompatActivity() {
         }
         dialogView.addView(confirmHideCheck)
 
+        val highProfitLabel = TextView(this).apply {
+            text = "🔔 Valor Mínimo R$/KM para Alerta Sonoro de Alta Lucratividade (ex: 4.00):"
+            textSize = 13f
+            setTextColor(Color.parseColor("#E2E8F0"))
+            setPadding(0, dp(6), 0, dp(4))
+        }
+        dialogView.addView(highProfitLabel)
+
+        val highProfitKmInput = EditText(this).apply {
+            setText(String.format(Locale.US, "%.2f", settingsManager.getHighProfitAlertKm()))
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#1E293B"))
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(12)) }
+        }
+        dialogView.addView(highProfitKmInput)
+
         scrollContainer.addView(dialogView)
 
         dialog = androidx.appcompat.app.AlertDialog.Builder(this)
@@ -1573,6 +1597,8 @@ class MainActivity : AppCompatActivity() {
 
                 val parsedMinKm = minKmInput.text.toString().replace(",", ".").toFloatOrNull() ?: 2.0f
                 settingsManager.setMinKmValue(parsedMinKm)
+                val parsedHighProfit = highProfitKmInput.text.toString().replace(",", ".").toFloatOrNull() ?: 4.0f
+                settingsManager.setHighProfitAlertKm(parsedHighProfit)
                 settingsManager.setConfirmHideBelowMinKm(confirmHideCheck.isChecked)
 
                 pendingRoutes?.let { displayRoutesOnMap(it) }

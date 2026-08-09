@@ -11,6 +11,7 @@ class SettingsManager(context: Context) {
         // Thresholds
         const val KEY_MIN_KM_VALUE = "min_km_value"
         const val KEY_MIN_HOUR_VALUE = "min_hour_value"
+        const val KEY_HIGH_PROFIT_ALERT_KM_VALUE = "high_profit_alert_km_value"
         const val KEY_CONFIRM_HIDE_BELOW_MIN_KM = "confirm_hide_below_min_km"
         const val KEY_AUTO_HIDE_ENABLED = "auto_hide_enabled"
         
@@ -35,6 +36,7 @@ class SettingsManager(context: Context) {
         // Defaults
         const val DEFAULT_MIN_KM = 2.0f
         const val DEFAULT_MIN_HOUR = 45.0f
+        const val DEFAULT_HIGH_PROFIT_ALERT_KM = 4.0f
         const val DEFAULT_MAX_ROUTES = 3
         
         const val DEFAULT_UBER_X_COLOR = "#F2121212"
@@ -50,6 +52,9 @@ class SettingsManager(context: Context) {
 
     fun getMinKmValue(): Float = prefs.getFloat(KEY_MIN_KM_VALUE, DEFAULT_MIN_KM)
     fun setMinKmValue(value: Float) = prefs.edit().putFloat(KEY_MIN_KM_VALUE, value).apply()
+
+    fun getHighProfitAlertKm(): Float = prefs.getFloat(KEY_HIGH_PROFIT_ALERT_KM_VALUE, DEFAULT_HIGH_PROFIT_ALERT_KM)
+    fun setHighProfitAlertKm(value: Float) = prefs.edit().putFloat(KEY_HIGH_PROFIT_ALERT_KM_VALUE, value).apply()
 
     fun getConfirmHideBelowMinKm(): Boolean = prefs.getBoolean(KEY_CONFIRM_HIDE_BELOW_MIN_KM, true)
     fun setConfirmHideBelowMinKm(value: Boolean) = prefs.edit().putBoolean(KEY_CONFIRM_HIDE_BELOW_MIN_KM, value).apply()

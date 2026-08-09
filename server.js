@@ -1455,23 +1455,10 @@ const server = http.createServer(async (req, res) => {
   res.end('404 - Not Found');
 });
 
-let retryCount = 0;
-const MAX_RETRIES = 15;
-
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    retryCount++;
-    console.error(`⚠️ Port ${PORT} is already in use (attempt ${retryCount}/${MAX_RETRIES}). Retrying in 1s...`);
-    if (retryCount <= MAX_RETRIES) {
-      setTimeout(() => {
-        try {
-          server.close();
-        } catch (e) {}
-        server.listen(PORT, '0.0.0.0');
-      }, 1000);
-    } else {
-      console.error(`❌ Could not bind to port ${PORT} after ${MAX_RETRIES} attempts.`);
-    }
+    console.error(`⚠️ Port ${PORT} is already in use. Exiting to allow process manager to restart...`);
+    process.exit(1);
   } else {
     console.error('Server error:', err);
   }

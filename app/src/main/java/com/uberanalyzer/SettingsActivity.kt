@@ -64,6 +64,10 @@ class SettingsActivity : AppCompatActivity() {
         val hourInput = createEditText(settings.getMinHourValue().toString(), InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL)
         root.addView(hourInput)
 
+        root.addView(createLabel("🔔 Alerta Sonoro de Boa Lucratividade (R$/KM Mínimo, ex: 4.0)"))
+        val highProfitInput = createEditText(settings.getHighProfitAlertKm().toString(), InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL)
+        root.addView(highProfitInput)
+
         // Category Colors
         root.addView(TextView(this).apply { text = "Cores das Categorias"; setTextColor(Color.WHITE); textSize = 18f; setPadding(0, dp(30), 0, dp(10)) })
         
@@ -89,6 +93,7 @@ class SettingsActivity : AppCompatActivity() {
                 settings.setAutoHideEnabled(autoHideCheck.isChecked)
                 settings.setConfirmHideBelowMinKm(confirmHideCheck.isChecked)
                 settings.setMinHourValue(hourInput.text.toString().toFloatOrNull() ?: 45.0f)
+                settings.setHighProfitAlertKm(highProfitInput.text.toString().toFloatOrNull() ?: 4.0f)
                 
                 selectedColors.forEach { (key, color) ->
                     if (key.startsWith("rating_")) settings.setRatingColor(key, color)
