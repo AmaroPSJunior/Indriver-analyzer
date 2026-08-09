@@ -149,25 +149,12 @@ class MainActivity : AppCompatActivity() {
                             !passName.contains("System", true) &&
                             !passName.contains("Atalho", true)
 
-                        val isValidPickup = pickup.isNotBlank() && 
-                            !pickup.contains("não especificada", true) && 
-                            !pickup.contains("não capturado", true) && 
-                            !pickup.equals("Endereço de Embarque", true) &&
-                            !pickup.contains("sáb", true) &&
-                            !pickup.contains("dom", true) &&
-                            !pickup.contains("wi-fi", true) &&
-                            !pickup.contains("wifi", true) &&
-                            !pickup.contains("sinal", true)
+                        val isValidPickup = com.uberanalyzer.parser.RideParser.isRealAddress(pickup)
+                        val isValidDropoff = com.uberanalyzer.parser.RideParser.isRealAddress(dropoff)
 
-                        val isValidDropoff = dropoff.isNotBlank() && 
-                            !dropoff.contains("não especificado", true) && 
-                            !dropoff.contains("não capturado", true) && 
-                            !dropoff.equals("Endereço de Desembarque", true) &&
-                            !dropoff.contains("wi-fi", true) &&
-                            !dropoff.contains("wifi", true) &&
-                            !dropoff.contains("sinal", true)
+                        val hasAnyAddress = isValidPickup || isValidDropoff || dropoff.contains("mapa", true) || pickup.contains("mapa", true)
 
-                        if (price > 0.0 && dist > 0.0 && isValidName && isValidPickup && isValidDropoff) {
+                        if (price > 0.0 && dist > 0.0 && isValidName && hasAnyAddress) {
                             routesList.add(RouteData(pickup, dropoff, price, dist, time, earningsKm, score, passName, passPhoto))
                         }
                     }
@@ -177,8 +164,8 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (routesList.isEmpty() && intent != null) {
-                val pickup = intent.getStringExtra("pickup_address")
-                val dropoff = intent.getStringExtra("dropoff_address")
+                val pickup = intent.getStringExtra("pickup_address") ?: ""
+                val dropoff = intent.getStringExtra("dropoff_address") ?: ""
                 val passName = intent.getStringExtra("passenger") ?: "Passageiro"
                 
                 val isValidName = passName.isNotBlank() && 
@@ -189,14 +176,11 @@ class MainActivity : AppCompatActivity() {
                     !passName.contains("Waze", true) &&
                     !passName.contains("Wi-Fi", true)
 
-                val isValidPickup = !pickup.isNullOrBlank() && 
-                    !pickup.contains("sáb", true) && 
-                    !pickup.contains("wi-fi", true)
+                val isValidPickup = com.uberanalyzer.parser.RideParser.isRealAddress(pickup)
+                val isValidDropoff = com.uberanalyzer.parser.RideParser.isRealAddress(dropoff)
+                val hasAnyAddress = isValidPickup || isValidDropoff || dropoff.contains("mapa", true) || pickup.contains("mapa", true)
 
-                val isValidDropoff = !dropoff.isNullOrBlank() && 
-                    !dropoff.contains("wi-fi", true)
-
-                if (isValidPickup && isValidDropoff && isValidName && pickup != null && dropoff != null) {
+                if (isValidName && hasAnyAddress) {
                     val price = intent.getDoubleExtra("price", 0.0)
                     val dist = intent.getDoubleExtra("distance_km", 0.0)
                     val time = intent.getIntExtra("time_min", 0)
@@ -728,8 +712,30 @@ class MainActivity : AppCompatActivity() {
                                     iconAnchor: [17, 17]
                                 });
 
-                                var hasPickup = r.pLat && r.pLng && Math.abs(r.pLat) > 0.001 && Math.abs(r.pLng) > 0.001 && r.pickup && r.pickup.length > 0;
-                                var hasDropoff = r.dLat && r.dLng && Math.abs(r.dLat) > 0.001 && Math.abs(r.dLng) > 0.001 && r.dropoff && r.dropoff.length > 0;
+                                function isRealAddressJS(addr) {
+                                    if (!addr || typeof addr !== 'string') return false;
+                                    var raw = addr.trim();
+                                    if (raw.length < 3) return false;
+                                    var lower = raw.toLowerCase();
+                                    if (lower.indexOf('definir') !== -1 ||
+                                        lower.indexOf('escolher no mapa') !== -1 ||
+                                        lower.indexOf('no mapa') !== -1 ||
+                                        lower.indexOf('informado no app') !== -1 ||
+                                        lower.indexOf('não especificado') !== -1 ||
+                                        lower.indexOf('nao especificado') !== -1 ||
+                                        lower.indexOf('não capturado') !== -1 ||
+                                        lower.indexOf('nao capturado') !== -1 ||
+                                        lower.indexOf('não identificado') !== -1 ||
+                                        lower.indexOf('nao identificado') !== -1 ||
+                                        lower.indexOf('sem destino') !== -1 ||
+                                        lower.indexOf('endereço de') !== -1) {
+                                        return false;
+                                    }
+                                    return true;
+                                }
+
+                                var hasPickup = r.pLat && r.pLng && Math.abs(r.pLat) > 0.001 && Math.abs(r.pLng) > 0.001 && isRealAddressJS(r.pickup);
+                                var hasDropoff = r.dLat && r.dLng && Math.abs(r.dLat) > 0.001 && Math.abs(r.dLng) > 0.001 && isRealAddressJS(r.dropoff);
 
                                 if (hasPickup) {
                                     var pMarker = L.marker([r.pLat, r.pLng], {icon: pickupIcon}).addTo(map)
@@ -795,8 +801,8 @@ class MainActivity : AppCompatActivity() {
                     function focusRouteByIdx(idx) {
                         if (idx >= 0 && idx < allRoutesData.length) {
                             var r = allRoutesData[idx];
-                            var hasPickup = r.pLat && r.pLng && Math.abs(r.pLat) > 0.001;
-                            var hasDropoff = r.dLat && r.dLng && Math.abs(r.dLat) > 0.001;
+                            var hasPickup = r.pLat && r.pLng && Math.abs(r.pLat) > 0.001 && isRealAddressJS(r.pickup);
+                            var hasDropoff = r.dLat && r.dLng && Math.abs(r.dLat) > 0.001 && isRealAddressJS(r.dropoff);
                             if (hasPickup && hasDropoff) {
                                 map.flyTo([(r.pLat + r.dLat)/2, (r.pLng + r.dLng)/2], 14, {duration: 0.8});
                             } else if (hasPickup) {
@@ -1155,20 +1161,22 @@ class MainActivity : AppCompatActivity() {
                 card.addView(infoText)
             }
 
-            val pickupDisplay = if (route.pickup.isNotBlank()) route.pickup else "Não identificada"
+            val isRealPickup = com.uberanalyzer.parser.RideParser.isRealAddress(route.pickup)
+            val pickupDisplay = if (isRealPickup) route.pickup else (if (route.pickup.isNotBlank()) route.pickup else "Não identificada")
             val pickupText = TextView(this).apply {
                 text = "🟢 Origem: $pickupDisplay"
-                setTextColor(if (route.pickup.isNotBlank()) Color.parseColor("#4ADE80") else Color.parseColor("#64748B"))
+                setTextColor(if (isRealPickup) Color.parseColor("#4ADE80") else Color.parseColor("#64748B"))
                 textSize = 12f
                 maxLines = 2
                 ellipsize = android.text.TextUtils.TruncateAt.END
             }
             card.addView(pickupText)
 
-            val dropoffDisplay = if (route.dropoff.isNotBlank()) route.dropoff else "Não identificado"
+            val isRealDropoff = com.uberanalyzer.parser.RideParser.isRealAddress(route.dropoff)
+            val dropoffDisplay = if (isRealDropoff) route.dropoff else (if (route.dropoff.isNotBlank()) route.dropoff else "Definir destino no mapa")
             val dropoffText = TextView(this).apply {
                 text = "🟠 Destino: $dropoffDisplay"
-                setTextColor(if (route.dropoff.isNotBlank()) Color.parseColor("#FB923C") else Color.parseColor("#64748B"))
+                setTextColor(if (isRealDropoff) Color.parseColor("#FB923C") else Color.parseColor("#64748B"))
                 textSize = 12f
                 maxLines = 2
                 ellipsize = android.text.TextUtils.TruncateAt.END
@@ -1199,7 +1207,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun cleanAddressForGeocoding(rawAddress: String): String {
-        if (rawAddress.isBlank()) return ""
+        if (!com.uberanalyzer.parser.RideParser.isRealAddress(rawAddress)) return ""
         var clean = rawAddress
         // Remove OCR noise, hashtags and inDrive internal codes like #8573311-!#
         clean = clean.replace(Regex("#[0-9A-Za-z\\-!#]+"), "")
@@ -1222,7 +1230,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun resolveCoordinates(rawAddress: String, isPickup: Boolean, distanceKm: Double, routeIndex: Int): Pair<Double, Double> {
-        if (rawAddress.isBlank()) return Pair(0.0, 0.0)
+        if (!com.uberanalyzer.parser.RideParser.isRealAddress(rawAddress)) return Pair(0.0, 0.0)
 
         val clean = cleanAddressForGeocoding(rawAddress)
         if (clean.isBlank()) return Pair(0.0, 0.0)

@@ -559,13 +559,21 @@ object RideParser {
         return Pair(pickup, dropoff)
     }
 
-    private fun isValidAddressLine(line: String): Boolean {
-        val rawTrim = line.trim()
+    fun isRealAddress(address: String?): Boolean {
+        if (address.isNullOrBlank()) return false
+        val rawTrim = address.trim()
         if (rawTrim.length < 3) return false
         val lower = rawTrim.lowercase(Locale.getDefault())
 
+        // Non-address placeholder or UI text
+        if (lower.contains("definir") || lower.contains("escolher no mapa") || lower.contains("destino no mapa") ||
+            lower.contains("no mapa") || lower.contains("informado no app") || lower.contains("destino informado") ||
+            lower.contains("não especificado") || lower.contains("nao especificado") || lower.contains("não capturado") ||
+            lower.contains("nao capturado") || lower.contains("endereço de") || lower.contains("nao identificado") ||
+            lower.contains("não identificado") || lower.contains("sem destino") || lower.contains("a definir")) return false
+
         // Absolute disqualifiers: prices, rates, ratings, payment methods, durations, distances
-        if (line.contains("★") || line.contains("R$") || line.contains("Pix", true) || lower.contains("/km")) return false
+        if (address.contains("★") || address.contains("R$") || address.contains("Pix", true) || lower.contains("/km")) return false
 
         // Disqualify system UI, media, notifications, dates, clock, status bar, phone indicators, action buttons
         if (lower.contains("spotify") || lower.contains("waze") || lower.contains("sinal") ||
@@ -606,6 +614,10 @@ object RideParser {
         if (letterCount < 2) return false
 
         return true
+    }
+
+    private fun isValidAddressLine(line: String): Boolean {
+        return isRealAddress(line)
     }
 
     private fun cleanAddressString(addr: String): String {
