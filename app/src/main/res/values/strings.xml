@@ -1,0 +1,30 @@
+<resources>
+    <string name="app_name">inDriver Analyzer</string>
+    <string name="app_title">🚗 inDriver Ride Analyzer</string>
+    <string name="app_subtitle">Capture waiting list rides in real-time JSON</string>
+    <string name="notif_access">Notification Access</string>
+    <string name="overlay_access">Draw Over Apps</string>
+    <string name="listener_service">Listener Service</string>
+    <string name="enabled">✅ Enabled</string>
+    <string name="disabled">❌ Disabled</string>
+    <string name="running">🟢 Running</string>
+    <string name="stopped">🔴 Stopped</string>
+    <string name="btn_enable_notif">Enable Notification Access</string>
+    <string name="btn_enable_overlay">Enable Overlay Permission</string>
+    <string name="how_it_works">How It Works</string>
+    <string name="step_1">1️⃣ Enable both accessibility and overlay permissions</string>
+    <string name="step_2">2️⃣ Open the inDriver (Driver) app normally</string>
+    <string name="step_3">3️⃣ When ride offers appear on the waiting list, we capture them</string>
+    <string name="step_4">4️⃣ All listed ride details are extracted into structured JSON</string>
+    <string name="step_5">5️⃣ A pop-up overlay displays the JSON inspection</string>
+    <string name="score_colors">Score Colors:</string>
+    <string name="color_green">🟢 Green = High profit per km</string>
+    <string name="color_yellow">🟡 Yellow = Average profit</string>
+    <string name="color_red">🔴 Red = Low value offer</string>
+    <string name="overlay_score">Score: %s</string>
+    <string name="overlay_price">Price</string>
+    <string name="overlay_distance">Distance</string>
+    <string name="overlay_time">Time</string>
+    <string name="overlay_price_km">R$/km</string>
+    <string name="overlay_dismiss">↕ Swipe or click Close to dismiss</string>
+</resources>

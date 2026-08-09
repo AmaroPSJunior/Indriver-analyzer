@@ -1,0 +1,30 @@
+<resources>
+    <string name="app_name">inDriver Analisador</string>
+    <string name="app_title">🚗 Analisador de Corridas inDriver</string>
+    <string name="app_subtitle">Capture todas as corridas da lista de espera em JSON</string>
+    <string name="notif_access">Acesso a Notificações</string>
+    <string name="overlay_access">Sobreposição de Tela</string>
+    <string name="listener_service">Serviço de Escuta</string>
+    <string name="enabled">✅ Ativado</string>
+    <string name="disabled">❌ Desativado</string>
+    <string name="running">🟢 Executando</string>
+    <string name="stopped">🔴 Parado</string>
+    <string name="btn_enable_notif">Ativar Acesso a Notificações</string>
+    <string name="btn_enable_overlay">Ativar Permissão de Sobreposição</string>
+    <string name="how_it_works">Como Funciona</string>
+    <string name="step_1">1️⃣ Ative a permissão do Leitor e de Sobreposição</string>
+    <string name="step_2">2️⃣ Abra o app inDriver (Motorista) na lista de corridas</string>
+    <string name="step_3">3️⃣ Todas as corridas listadas na lista de espera são capturadas</string>
+    <string name="step_4">4️⃣ Valores, distâncias, tempo e endereços são convertidos em JSON</string>
+    <string name="step_5">5️⃣ Uma pop-up exibe o arquivo JSON com todas as corridas</string>
+    <string name="score_colors">Legenda de Ganhos:</string>
+    <string name="color_green">🟢 Verde = Alta rentabilidade por km</string>
+    <string name="color_yellow">🟡 Amarelo = Rentabilidade média</string>
+    <string name="color_red">🔴 Vermelho = Baixo valor oferecido</string>
+    <string name="overlay_score">Nota: %s</string>
+    <string name="overlay_price">Preço</string>
+    <string name="overlay_distance">Distância</string>
+    <string name="overlay_time">Tempo</string>
+    <string name="overlay_price_km">R$/km</string>
+    <string name="overlay_dismiss">↕ Clique em Fechar ou arraste para fechar</string>
+</resources>

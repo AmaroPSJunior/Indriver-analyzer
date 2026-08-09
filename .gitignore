@@ -1,0 +1,9 @@
+*.apk
+*.aab
+build/
+app/build/
+.gradle/
+local.properties
+.idea/
+*.keystore
+!debug.keystore.base64
