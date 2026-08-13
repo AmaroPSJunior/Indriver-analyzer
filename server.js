@@ -1489,6 +1489,5 @@ process.on('SIGINT', () => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  retryCount = 0;
   console.log(`✅ inDrive Analyzer preview server listening on http://0.0.0.0:${PORT}`);
 });
