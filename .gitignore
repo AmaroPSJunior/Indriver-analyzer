@@ -7,3 +7,4 @@ local.properties
 .idea/
 *.keystore
 !debug.keystore.base64
+.vscode/
