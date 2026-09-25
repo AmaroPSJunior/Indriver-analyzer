@@ -17,9 +17,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.5'
+      - name: Install Gradle (the repository wrapper is not used)
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip
+          unzip -q gradle-8.5-bin.zip -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/gradle-8.5/bin" >> "$GITHUB_ENV"
       - name: Test map
         run: node scripts/test-map.cjs
       - name: Compile and test Android without signing keys
