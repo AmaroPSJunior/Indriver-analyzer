@@ -1150,7 +1150,23 @@ class MainActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
             }
 
-            passRow.addView(passIcon)
+            val photoBitmap = if (settingsManager.getShowPassengerPhoto() &&
+                route.passengerPhoto.startsWith("data:image/") && route.passengerPhoto.contains(";base64,")) {
+                try {
+                    val bytes = android.util.Base64.decode(route.passengerPhoto.substringAfter(";base64,"), android.util.Base64.DEFAULT)
+                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                } catch (_: IllegalArgumentException) { null }
+            } else null
+            if (photoBitmap != null) {
+                passRow.addView(android.widget.ImageView(this).apply {
+                    setImageBitmap(photoBitmap)
+                    contentDescription = "Foto do passageiro"
+                    scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                    layoutParams = LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(6) }
+                })
+            } else {
+                passRow.addView(passIcon)
+            }
             passRow.addView(passName)
             card.addView(passRow)
 

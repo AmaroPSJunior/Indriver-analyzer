@@ -59,6 +59,11 @@ class UberAccessibilityService : AccessibilityService() {
     }
 
     private fun performInDriverScan() {
+        val targetBounds = findRideWindowBounds()
+        if (targetBounds == null) {
+            performFallbackAccessibilityScan()
+            return
+        }
         // Step 1: Attempt direct ML Kit OCR screen capture if Android 11+
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
             com.uberanalyzer.ocr.MlKitScreenOcrEngine.captureAndProcessScreen(
@@ -70,11 +75,13 @@ class UberAccessibilityService : AccessibilityService() {
                         textBlocks: List<com.uberanalyzer.ocr.MlKitScreenOcrEngine.OcrBlock>,
                         lines: List<com.uberanalyzer.ocr.MlKitScreenOcrEngine.OcrLine>
                     ) {
+                        val rideLines = lines.filter { it.boundingBox?.let(targetBounds::contains) == true }
+                        val rideText = rideLines.joinToString(" | ") { it.text }
                         var processed = false
 
                         // 1. Tenta parsing por agrupamento espacial de Bounding Boxes (ML Kit Lines)
                         run {
-                            val spatialRides = RideParser.parseInDriverSpatialLines(lines, fullImage)
+                            val spatialRides = RideParser.parseInDriverSpatialLines(rideLines, fullImage)
                             // Shadow trial: explicitly calibrated debug builds only; never changes live rides.
                             if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0 && fullImage != null) {
                                 try {
@@ -100,10 +107,10 @@ class UberAccessibilityService : AccessibilityService() {
                         }
 
                         // 2. Se espacial não gerou resultados, tenta parsing por texto corrido
-                        if (!processed && extractedText.isNotBlank()) {
-                            val lowerText = extractedText.lowercase(java.util.Locale.getDefault())
+                        if (!processed && rideText.isNotBlank()) {
+                            val lowerText = rideText.lowercase(java.util.Locale.getDefault())
                             if (lowerText.contains("r$") || lowerText.contains("oferecer") || lowerText.contains("aceitar") || lowerText.contains("recusar")) {
-                                processed = processInDriverQueue(extractedText, isOcrSource = true)
+                                processed = processInDriverQueue(rideText, isOcrSource = true)
                             }
                         }
 
@@ -124,6 +131,22 @@ class UberAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun isRidePackage(pkg: String): Boolean =
+        pkg.contains("indrive") || pkg.contains("rubus") || pkg.contains("sinet") || pkg.contains("ubercab")
+
+    private fun findRideWindowBounds(): android.graphics.Rect? {
+        return try {
+            windows?.firstNotNullOfOrNull { window ->
+                val root = window.root ?: return@firstNotNullOfOrNull null
+                try {
+                    if (isRidePackage(root.packageName?.toString().orEmpty())) {
+                        android.graphics.Rect().also { window.getBoundsInScreen(it) }.takeUnless { it.isEmpty }
+                    } else null
+                } finally { root.recycle() }
+            }
+        } catch (_: Exception) { null }
+    }
+
     private fun performFallbackAccessibilityScan() {
         try {
             val sb = StringBuilder()
@@ -134,8 +157,7 @@ class UberAccessibilityService : AccessibilityService() {
                 for (window in activeWindows) {
                     val root = window.root ?: continue
                     val pkg = root.packageName?.toString()?.lowercase(java.util.Locale.getDefault()) ?: ""
-                    if (pkg.contains("systemui") || pkg.contains("spotify") || pkg.contains("waze") || 
-                        pkg.contains("launcher") || pkg.contains("media") || pkg.contains("music")) {
+                    if (!isRidePackage(pkg)) {
                         try { root.recycle() } catch (_: Exception) {}
                         continue
                     }
@@ -149,8 +171,7 @@ class UberAccessibilityService : AccessibilityService() {
                 val rootNode = rootInActiveWindow
                 if (rootNode != null) {
                     val pkg = rootNode.packageName?.toString()?.lowercase(java.util.Locale.getDefault()) ?: ""
-                    if (!pkg.contains("systemui") && !pkg.contains("spotify") && !pkg.contains("waze") && 
-                        !pkg.contains("launcher") && !pkg.contains("media") && !pkg.contains("music")) {
+                    if (isRidePackage(pkg)) {
                         try {
                             collectTextFast(rootNode, sb)
                         } finally {

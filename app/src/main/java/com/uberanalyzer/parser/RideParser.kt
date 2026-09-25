@@ -29,7 +29,7 @@ object RideParser {
         "solicitações", "solicitacoes", "aguardando", "lado a lado", "analisador", "analyzer",
         "todos os aplicativos", "todos os", "aplicativos", "recentes", "atalho de acessibilidade", "atalho",
         "acessibilidade", "hierarquia de nós", "hierarquia de nos", "hierarquia", "elementos detectados",
-        "copiar hierarquia", "flutuar na tela", "atualizar fila", "ocultar viagem", "auto-ocultar",
+        "copiar hierarquia", "flutuar na tela", "atualizar fila", "ocultar", "ocultar viagem", "auto-ocultar",
         "configurações", "configuracoes", "viewgroup", "cardview", "item de lista", "textview", "button",
         "ação de resposta", "acao de resposta", "lado a lado com indrive", "score da corrida", "valor da corrida",
         "distância total", "distancia total", "pedidos de viagem", "demanda", "desempenho", "offline", "conquista",
@@ -73,14 +73,11 @@ object RideParser {
 
         val screenWidth = fullBitmap?.width ?: 1080
 
-        // Filter out text from left-side system dock or right-side overlay windows
+        // The caller scopes OCR to the ride-app window. Keep the left avatar/name column.
         val validLines = lines.filter { line ->
             val text = line.text.trim()
             val lower = text.lowercase(Locale.getDefault())
             val box = line.boundingBox
-
-            // Filter out text from left-side system dock, launcher, or Waze widgets (X < 22% screen width)
-            val isLeftSideSystemDock = box != null && box.right < (screenWidth * 0.22)
 
             // Filter out right-side overlay windows or system debug titles
             val isRightSideOverlay = box != null && box.left > (screenWidth * 0.52) &&
@@ -92,7 +89,7 @@ object RideParser {
 
             val isNoise = NOISE_KEYWORDS.any { noise -> lower == noise || lower.contains(noise) }
 
-            text.isNotBlank() && !isLeftSideSystemDock && !isRightSideOverlay && !isNoise
+            text.isNotBlank() && !isRightSideOverlay && !isNoise
         }
 
         if (validLines.isEmpty()) return emptyList()
@@ -151,8 +148,7 @@ object RideParser {
 
             val cardBox = android.graphics.Rect(cardLeft, cardTop, cardRight, cardBottom)
 
-            // Reject card clusters originating from the far-left system launcher area or containing launcher noise
-            if (cardRight < (screenWidth * 0.22)) continue
+            // Reject clusters containing launcher noise.
 
             val lowerBlock = fullBlockText.lowercase(Locale.getDefault())
             if (lowerBlock.contains("waze") || 
@@ -175,7 +171,16 @@ object RideParser {
             }
 
             // RED REGION: Dynamic Crop of Passenger Avatar Photo
-            val croppedAvatarBase64 = cropAvatarBase64(fullBitmap, cardBox)
+            val nameLine = cluster.firstOrNull { extractPassengerNameClean(listOf(it.text)) != null }
+            val nameBox = nameLine?.boundingBox
+            val croppedAvatarBase64 = if (nameBox != null && nameBox.right < cardLeft + cardBox.width() * 0.25) {
+                val size = (nameBox.height() * 4).coerceAtMost((cardBox.width() * 0.12).toInt())
+                val left = nameBox.centerX() - size / 2
+                val top = nameBox.top - size
+                if (size > 10 && top >= cardTop && left >= 0)
+                    cropAvatarBase64(fullBitmap, android.graphics.Rect(left, top, left + size, top + size))
+                else ""
+            } else ""
             val passengerPhoto = if (croppedAvatarBase64.isNotBlank()) croppedAvatarBase64 else extractPassengerPhotoUrl(clusterTexts)
 
             // BLUE REGION: Main price (R$ XX)
@@ -443,8 +448,7 @@ object RideParser {
             val left = cardBox.left.coerceIn(0, fullBitmap.width - 1)
             val top = cardBox.top.coerceIn(0, fullBitmap.height - 1)
             
-            val cardHeight = cardBox.height().coerceAtLeast(100)
-            val size = (cardHeight * 0.40).toInt().coerceIn(40, (fullBitmap.width - left).coerceAtMost(fullBitmap.height - top))
+            val size = minOf(cardBox.width(), cardBox.height(), fullBitmap.width - left, fullBitmap.height - top)
             if (size <= 10) return ""
 
             val avatarBitmap = android.graphics.Bitmap.createBitmap(fullBitmap, left, top, size, size)
