@@ -91,8 +91,25 @@ jobs:
               raise SystemExit("::error::APK signing certificate is missing or differs from the permanent test key.")
           print("APK signing certificate matches the permanent test key.")
           PY
-          "$BUILD_TOOLS/aapt" dump badging "$APK" > "$RUNNER_TEMP/apk-badging.txt"
-          grep -q "^package: name='com.uberanalyzer' versionCode='$BUILD_NUMBER'" "$RUNNER_TEMP/apk-badging.txt"
+          APKANALYZER="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          if [ ! -x "$APKANALYZER" ]; then
+            APKANALYZER=$(command -v apkanalyzer || true)
+          fi
+          if [ -z "$APKANALYZER" ] || [ ! -x "$APKANALYZER" ]; then
+            echo "::error::apkanalyzer not found in the Android SDK command-line tools."
+            exit 1
+          fi
+          APPLICATION_ID=$("$APKANALYZER" manifest application-id "$APK")
+          VERSION_CODE=$("$APKANALYZER" manifest version-code "$APK")
+          if [ "$APPLICATION_ID" != "com.uberanalyzer" ]; then
+            echo "::error::Unexpected APK application ID: $APPLICATION_ID"
+            exit 1
+          fi
+          if [ "$VERSION_CODE" != "$BUILD_NUMBER" ]; then
+            echo "::error::Unexpected APK versionCode: $VERSION_CODE (expected $BUILD_NUMBER)"
+            exit 1
+          fi
+          echo "APK identity verified: $APPLICATION_ID, versionCode=$VERSION_CODE"
 
       - name: Renomear arquivo APK
         run: mv app/build/outputs/apk/debug/app-debug.apk "app/build/outputs/apk/debug/app-v1.0.$BUILD_NUMBER.apk"
