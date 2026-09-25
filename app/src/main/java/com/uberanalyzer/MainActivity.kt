@@ -355,7 +355,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateStatusView() {
         val accEnabled = isAccessibilityServiceEnabled()
         accStatusView.text = if (accEnabled) "✅ LEITOR ATIVO (LADO A LADO COM INDRIVE)" else "⚠️ LEITOR DESATIVADO — ATIVE PARA LER DA TELA"
-        accStatusView.setTextColor(if (accEnabled) Color.parseColor("#4ADE80") else Color.parseColor("#FBBF24"))
+        accStatusView.setTextColor(if (accEnabled) getColor(R.color.app_success) else getColor(R.color.app_warning))
         accButton.visibility = if (accEnabled) View.GONE else View.VISIBLE
     }
 
@@ -370,7 +370,7 @@ class MainActivity : AppCompatActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#0F172A"))
+            setBackgroundColor(getColor(R.color.app_background))
             layoutParams = LinearLayout.LayoutParams(-1, -1)
         }
 
@@ -379,7 +379,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(8))
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#1E293B"))
+                setColor(getColor(R.color.app_surface))
             }
         }
 
@@ -395,7 +395,7 @@ class MainActivity : AppCompatActivity() {
 
         titleText = TextView(this).apply {
             text = "⚡ inDrive Analyzer ${getAppVersionName()}"
-            setTextColor(Color.WHITE)
+            setTextColor(getColor(R.color.app_text))
             textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, 0, dp(8), 0)
@@ -495,7 +495,7 @@ class MainActivity : AppCompatActivity() {
         // --- Interactive Map View ---
         webView = WebView(this).apply {
             layoutParams = LinearLayout.LayoutParams(-1, 0, 1f)
-            setBackgroundColor(Color.parseColor("#0F172A"))
+            setBackgroundColor(getColor(R.color.app_background))
         }
         root.addView(webView)
 
@@ -605,6 +605,10 @@ class MainActivity : AppCompatActivity() {
                         white-space: nowrap;
                         text-align: center;
                     }
+                    .origin-circle, .destination-circle {
+                        font-family: sans-serif;
+                        font-weight: 900;
+                    }
                     .origin-circle {
                         box-sizing: border-box; flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; font-size: 18px;
                         display: flex; align-items: center; justify-content: center;
@@ -618,13 +622,18 @@ class MainActivity : AppCompatActivity() {
                         background: #DC2626; color: #FFFFFF;
                         box-shadow: 0 2px 4px rgba(0,0,0,0.6);
                     }
+                ${if ((resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) != android.content.res.Configuration.UI_MODE_NIGHT_YES) "@media all" else "@media not all"} {
+                        body, html, #map { background: #F8FAFC; }
+                        .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #FFFFFF; color: #0F172A; }
+                        .passenger-name-pill, .avatar-num-badge { background: #FFFFFF; color: #0F172A; }
+                    }
                 </style>
             </head>
             <body>
                 <div id="map"></div>
                 <script>
                     var map = L.map('map', {zoomControl: false}).setView([-23.56168, -46.65598], 13);
-                    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/${if ((resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES) "dark_all" else "voyager"}/{z}/{x}/{y}{r}.png', {
                         attribution: '© OpenStreetMap contributors',
                         maxZoom: 19
                     }).addTo(map);
@@ -692,8 +701,8 @@ class MainActivity : AppCompatActivity() {
                                     nameHtml = '<div class="passenger-name-pill" style="border-color: ' + color + '; color: ' + color + ';">👤 ' + passName + '</div>';
                                 }
 
-                                var pickupArrow = '⬆️';
-                                var dropoffArrow = '⬇️';
+                                var pickupArrow = '&#8593;';
+                                var dropoffArrow = '&#8595;';
 
                                 var pickupHtml = '<div class="avatar-badge-container">' + 
                                     photoHtml + nameHtml +
@@ -913,9 +922,9 @@ class MainActivity : AppCompatActivity() {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(12), dp(10), dp(12), dp(10))
                 background = GradientDrawable().apply {
-                    setColor(Color.parseColor("#0F172A"))
+                    setColor(getColor(R.color.app_background))
                     cornerRadius = dp(8).toFloat()
-                    setStroke(dp(2), Color.parseColor("#38BDF8"))
+                    setStroke(dp(2), getColor(R.color.app_accent))
                 }
                 layoutParams = LinearLayout.LayoutParams(dp(300), -2).apply {
                     setMargins(0, 0, dp(8), 0)
@@ -923,13 +932,13 @@ class MainActivity : AppCompatActivity() {
             }
             val titleWait = TextView(this).apply {
                 text = "🟢 AGUARDANDO SOLICITAÇÕES DO INDRIVE"
-                setTextColor(Color.parseColor("#38BDF8"))
+                setTextColor(getColor(R.color.app_accent))
                 textSize = 12f
                 typeface = Typeface.DEFAULT_BOLD
             }
             val descWait = TextView(this).apply {
                 text = "Abra o aplicativo do inDrive lado a lado. O Leitor de Tela capturará automaticamente as corridas originais e flotará as rotas no mapa em tempo real."
-                setTextColor(Color.parseColor("#94A3B8"))
+                setTextColor(getColor(R.color.app_secondary))
                 textSize = 11f
                 maxLines = 3
             }
@@ -1090,7 +1099,7 @@ class MainActivity : AppCompatActivity() {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(10), dp(8), dp(10), dp(8))
                 background = GradientDrawable().apply {
-                    setColor(Color.parseColor("#0F172A"))
+                    setColor(getColor(R.color.app_background))
                     cornerRadius = dp(8).toFloat()
                     setStroke(dp(2), colorInt)
                 }
@@ -1142,7 +1151,7 @@ class MainActivity : AppCompatActivity() {
 
             val passName = TextView(this).apply {
                 text = if (route.passenger.isNotBlank()) route.passenger else "Passageiro inDrive"
-                setTextColor(Color.parseColor("#F1F5F9"))
+                setTextColor(getColor(R.color.app_text))
                 textSize = 12f
                 typeface = Typeface.DEFAULT_BOLD
                 maxLines = 1
@@ -1190,7 +1199,7 @@ class MainActivity : AppCompatActivity() {
             val pickupDisplay = if (isRealPickup) route.pickup else (if (route.pickup.isNotBlank()) route.pickup else "Não identificada")
             val pickupText = TextView(this).apply {
                 text = "🟢 Origem: $pickupDisplay"
-                setTextColor(if (isRealPickup) Color.parseColor("#4ADE80") else Color.parseColor("#64748B"))
+                setTextColor(if (isRealPickup) getColor(R.color.app_success) else Color.parseColor("#64748B"))
                 textSize = 12f
                 maxLines = 2
                 ellipsize = android.text.TextUtils.TruncateAt.END
@@ -1201,7 +1210,7 @@ class MainActivity : AppCompatActivity() {
             val dropoffDisplay = if (isRealDropoff) route.dropoff else (if (route.dropoff.isNotBlank()) route.dropoff else "Definir destino no mapa")
             val dropoffText = TextView(this).apply {
                 text = "🟠 Destino: $dropoffDisplay"
-                setTextColor(if (isRealDropoff) Color.parseColor("#FB923C") else Color.parseColor("#64748B"))
+                setTextColor(if (isRealDropoff) getColor(R.color.app_orange) else Color.parseColor("#64748B"))
                 textSize = 12f
                 maxLines = 2
                 ellipsize = android.text.TextUtils.TruncateAt.END
@@ -1364,7 +1373,7 @@ class MainActivity : AppCompatActivity() {
         var dialog: androidx.appcompat.app.AlertDialog? = null
 
         val scrollContainer = ScrollView(this).apply {
-            setBackgroundColor(Color.parseColor("#0F172A"))
+            setBackgroundColor(getColor(R.color.app_background))
         }
 
         val dialogView = LinearLayout(this).apply {
@@ -1375,7 +1384,7 @@ class MainActivity : AppCompatActivity() {
         val title = TextView(this).apply {
             text = "⚙️ Configurações & Ferramentas"
             textSize = 18f
-            setTextColor(Color.WHITE)
+            setTextColor(getColor(R.color.app_text))
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, 0, 0, dp(14))
         }
@@ -1385,7 +1394,7 @@ class MainActivity : AppCompatActivity() {
         val toolsLabel = TextView(this).apply {
             text = "🛠️ FERRAMENTAS & ATALHOS"
             textSize = 12f
-            setTextColor(Color.parseColor("#38BDF8"))
+            setTextColor(getColor(R.color.app_accent))
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, 0, 0, dp(8))
         }
@@ -1395,7 +1404,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(12), dp(12), dp(12))
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#1E293B"))
+                setColor(getColor(R.color.app_surface))
                 cornerRadius = dp(10).toFloat()
                 setStroke(dp(1), Color.parseColor("#334155"))
             }
@@ -1464,7 +1473,7 @@ class MainActivity : AppCompatActivity() {
         val mapLabel = TextView(this).apply {
             text = "🗺️ EXIBIÇÃO DO MAPA & CARDS"
             textSize = 12f
-            setTextColor(Color.parseColor("#38BDF8"))
+            setTextColor(getColor(R.color.app_accent))
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, 0, 0, dp(8))
         }
@@ -1473,7 +1482,7 @@ class MainActivity : AppCompatActivity() {
         val maxRoutesText = TextView(this).apply {
             text = "Quantidade de Rotas no Mapa: ${settingsManager.getMaxRoutes()} (Máximo 4)"
             textSize = 13f
-            setTextColor(Color.parseColor("#E2E8F0"))
+            setTextColor(getColor(R.color.app_text))
             setPadding(0, dp(4), 0, dp(6))
         }
         dialogView.addView(maxRoutesText)
@@ -1490,7 +1499,7 @@ class MainActivity : AppCompatActivity() {
                 text = "$count rotas"
                 textSize = 11f
                 setTextColor(Color.WHITE)
-                setBackgroundColor(if (currentMax == count) Color.parseColor("#38BDF8") else Color.parseColor("#334155"))
+                setBackgroundColor(if (currentMax == count) getColor(R.color.app_accent) else Color.parseColor("#334155"))
                 setPadding(dp(8), dp(4), dp(8), dp(4))
                 layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply {
                     setMargins(dp(3), 0, dp(3), 0)
@@ -1501,7 +1510,7 @@ class MainActivity : AppCompatActivity() {
                     for (i in 0 until buttonsRow.childCount) {
                         val b = buttonsRow.getChildAt(i) as? Button
                         val valStr = b?.text?.toString() ?: ""
-                        b?.setBackgroundColor(if (valStr.startsWith("$currentMax ")) Color.parseColor("#38BDF8") else Color.parseColor("#334155"))
+                        b?.setBackgroundColor(if (valStr.startsWith("$currentMax ")) getColor(R.color.app_accent) else Color.parseColor("#334155"))
                     }
                 }
             }
@@ -1511,7 +1520,7 @@ class MainActivity : AppCompatActivity() {
 
         val showPhotoCheck = android.widget.CheckBox(this).apply {
             text = "📸 Exibir Foto do Usuário no Ponto A (Embarque)"
-            setTextColor(Color.WHITE)
+            setTextColor(getColor(R.color.app_text))
             textSize = 13f
             isChecked = settingsManager.getShowPassengerPhoto()
             setPadding(dp(8), dp(6), dp(8), dp(6))
@@ -1520,7 +1529,7 @@ class MainActivity : AppCompatActivity() {
 
         val showNameCheck = android.widget.CheckBox(this).apply {
             text = "👤 Exibir Nome do Usuário logo abaixo da Foto"
-            setTextColor(Color.WHITE)
+            setTextColor(getColor(R.color.app_text))
             textSize = 13f
             isChecked = settingsManager.getShowPassengerName()
             setPadding(dp(8), dp(6), dp(8), dp(6))
@@ -1529,7 +1538,7 @@ class MainActivity : AppCompatActivity() {
 
         val showMetricsCheck = android.widget.CheckBox(this).apply {
             text = "📊 Exibir Métricas e R$/km nos Cards"
-            setTextColor(Color.WHITE)
+            setTextColor(getColor(R.color.app_text))
             textSize = 13f
             isChecked = settingsManager.getShowRouteMetrics()
             setPadding(dp(8), dp(6), dp(8), dp(6))
@@ -1540,7 +1549,7 @@ class MainActivity : AppCompatActivity() {
         val kmLabel = TextView(this).apply {
             text = "💰 REGRAS DE VALOR MÍNIMO E OCULTAÇÃO"
             textSize = 12f
-            setTextColor(Color.parseColor("#38BDF8"))
+            setTextColor(getColor(R.color.app_accent))
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, dp(12), 0, dp(6))
         }
@@ -1549,15 +1558,15 @@ class MainActivity : AppCompatActivity() {
         val kmInputLabel = TextView(this).apply {
             text = "Valor Mínimo R$/KM para Ocultar (ex: 2.00):"
             textSize = 13f
-            setTextColor(Color.parseColor("#E2E8F0"))
+            setTextColor(getColor(R.color.app_text))
             setPadding(0, dp(2), 0, dp(4))
         }
         dialogView.addView(kmInputLabel)
 
         val minKmInput = EditText(this).apply {
             setText(String.format(Locale.US, "%.2f", settingsManager.getMinKmValue()))
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#1E293B"))
+            setTextColor(getColor(R.color.app_text))
+            setBackgroundColor(getColor(R.color.app_surface))
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             setPadding(dp(12), dp(8), dp(12), dp(8))
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) }
@@ -1566,7 +1575,7 @@ class MainActivity : AppCompatActivity() {
 
         val autoHideCheck = android.widget.CheckBox(this).apply {
             text = "⚡ Ativar Auto-Ocultar automático para viagens abaixo do valor R$/km mínimo"
-            setTextColor(Color.WHITE)
+            setTextColor(getColor(R.color.app_text))
             textSize = 13f
             isChecked = settingsManager.getAutoHideEnabled()
             setPadding(dp(8), dp(4), dp(8), dp(6))
@@ -1575,7 +1584,7 @@ class MainActivity : AppCompatActivity() {
 
         val confirmHideCheck = android.widget.CheckBox(this).apply {
             text = "⚠️ Pedir confirmação ao ocultar manualmente viagens com valor menor que a meta (R$/km)"
-            setTextColor(Color.WHITE)
+            setTextColor(getColor(R.color.app_text))
             textSize = 13f
             isChecked = settingsManager.getConfirmHideBelowMinKm()
             setPadding(dp(8), dp(4), dp(8), dp(12))
@@ -1585,15 +1594,15 @@ class MainActivity : AppCompatActivity() {
         val highProfitLabel = TextView(this).apply {
             text = "🔔 Valor Mínimo R$/KM para Alerta Sonoro de Alta Lucratividade (ex: 4.00):"
             textSize = 13f
-            setTextColor(Color.parseColor("#E2E8F0"))
+            setTextColor(getColor(R.color.app_text))
             setPadding(0, dp(6), 0, dp(4))
         }
         dialogView.addView(highProfitLabel)
 
         val highProfitKmInput = EditText(this).apply {
             setText(String.format(Locale.US, "%.2f", settingsManager.getHighProfitAlertKm()))
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#1E293B"))
+            setTextColor(getColor(R.color.app_text))
+            setBackgroundColor(getColor(R.color.app_surface))
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             setPadding(dp(12), dp(8), dp(12), dp(8))
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(12)) }
@@ -1667,14 +1676,14 @@ class MainActivity : AppCompatActivity() {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(16), dp(16), dp(16))
-            setBackgroundColor(Color.parseColor("#0F172A"))
+            setBackgroundColor(getColor(R.color.app_background))
         }
 
         // Title & Header
         val titleView = TextView(this).apply {
             text = "🛡️ Checklist de Permissões"
             textSize = 18f
-            setTextColor(Color.WHITE)
+            setTextColor(getColor(R.color.app_text))
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, 0, 0, dp(4))
         }
@@ -1683,7 +1692,7 @@ class MainActivity : AppCompatActivity() {
         val subtitleView = TextView(this).apply {
             text = "Siga o passo a passo com atalhos diretos para liberar as permissões no seu dispositivo:"
             textSize = 12f
-            setTextColor(Color.parseColor("#94A3B8"))
+            setTextColor(getColor(R.color.app_secondary))
             setPadding(0, 0, 0, dp(12))
         }
         container.addView(subtitleView)
@@ -1746,7 +1755,7 @@ class MainActivity : AppCompatActivity() {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(12), dp(12), dp(12), dp(12))
                 background = GradientDrawable().apply {
-                    setColor(Color.parseColor("#1E293B"))
+                    setColor(getColor(R.color.app_surface))
                     cornerRadius = dp(8).toFloat()
                     setStroke(dp(1), if (isGranted) Color.parseColor("#22C55E") else Color.parseColor("#334155"))
                 }
@@ -1774,7 +1783,7 @@ class MainActivity : AppCompatActivity() {
             val stepTitle = TextView(this).apply {
                 text = "  $title"
                 textSize = 13f
-                setTextColor(Color.WHITE)
+                setTextColor(getColor(R.color.app_text))
                 typeface = Typeface.DEFAULT_BOLD
                 layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
             }
@@ -1790,9 +1799,9 @@ class MainActivity : AppCompatActivity() {
                 typeface = Typeface.DEFAULT_BOLD
                 setTextColor(
                     when {
-                        isGranted -> Color.parseColor("#4ADE80")
-                        isOptional -> Color.parseColor("#FBBF24")
-                        else -> Color.parseColor("#F87171")
+                        isGranted -> getColor(R.color.app_success)
+                        isOptional -> getColor(R.color.app_warning)
+                        else -> getColor(R.color.app_error)
                     }
                 )
             }
@@ -1802,7 +1811,7 @@ class MainActivity : AppCompatActivity() {
             val descText = TextView(this).apply {
                 text = description
                 textSize = 12f
-                setTextColor(Color.parseColor("#CBD5E1"))
+                setTextColor(getColor(R.color.app_secondary))
                 setPadding(0, dp(6), 0, dp(8))
             }
             card.addView(descText)
@@ -2018,9 +2027,9 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(16), dp(16), dp(16))
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#0F172A"))
+                setColor(getColor(R.color.app_background))
                 cornerRadius = dp(12).toFloat()
-                setStroke(dp(2), Color.parseColor("#38BDF8"))
+                setStroke(dp(2), getColor(R.color.app_accent))
             }
         }
 
@@ -2034,7 +2043,7 @@ class MainActivity : AppCompatActivity() {
         val titleView = TextView(this).apply {
             text = "📜 Hierarquia de Nós de Acessibilidade [$rideCount]"
             textSize = 15f
-            setTextColor(Color.WHITE)
+            setTextColor(getColor(R.color.app_text))
             typeface = Typeface.DEFAULT_BOLD
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
@@ -2042,7 +2051,7 @@ class MainActivity : AppCompatActivity() {
         val closeX = TextView(this).apply {
             text = " ✖ "
             textSize = 18f
-            setTextColor(Color.parseColor("#94A3B8"))
+            setTextColor(getColor(R.color.app_secondary))
             setPadding(dp(8), dp(4), dp(8), dp(4))
             setOnClickListener { activeJsonDialog?.dismiss() }
         }
@@ -2055,7 +2064,7 @@ class MainActivity : AppCompatActivity() {
         val subText = TextView(this).apply {
             text = if (rideCount > 0) "Estrutura hierárquica organizada dos nós de acessibilidade da tela:" else "Nenhum nó capturado no momento. A hierarquia será atualizada ao vigiar a tela do inDrive."
             textSize = 12f
-            setTextColor(Color.parseColor("#94A3B8"))
+            setTextColor(getColor(R.color.app_secondary))
             setPadding(0, 0, 0, dp(10))
         }
         container.addView(subText)
@@ -2064,9 +2073,9 @@ class MainActivity : AppCompatActivity() {
         val scrollView = ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(-1, dp(280))
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#020617"))
+                setColor(getColor(R.color.app_input))
                 cornerRadius = dp(8).toFloat()
-                setStroke(dp(1), Color.parseColor("#1E293B"))
+                setStroke(dp(1), getColor(R.color.app_surface))
             }
             setPadding(dp(10), dp(10), dp(10), dp(10))
         }
@@ -2074,7 +2083,7 @@ class MainActivity : AppCompatActivity() {
         val jsonTextView = TextView(this).apply {
             text = formattedHierarchy
             textSize = 11f
-            setTextColor(Color.parseColor("#38BDF8"))
+            setTextColor(getColor(R.color.app_accent))
             typeface = Typeface.MONOSPACE
             setTextIsSelectable(true)
         }

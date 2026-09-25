@@ -32,10 +32,10 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun buildUI(): ScrollView {
         val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
-        val scrollView = ScrollView(this).apply { setBackgroundColor(Color.parseColor("#121212")); isFillViewport = true }
+        val scrollView = ScrollView(this).apply { setBackgroundColor(getColor(R.color.app_background)); isFillViewport = true }
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(20), dp(20), dp(20)) }
 
-        root.addView(TextView(this).apply { text = "Configurações de Análise"; setTextColor(Color.WHITE); textSize = 22f; typeface = Typeface.DEFAULT_BOLD; setPadding(0, 0, 0, dp(25)) })
+        root.addView(TextView(this).apply { text = "Configurações de Análise"; setTextColor(getColor(R.color.app_text)); textSize = 22f; typeface = Typeface.DEFAULT_BOLD; setPadding(0, 0, 0, dp(25)) })
 
         // Thresholds
         root.addView(createLabel("Meta R$ / KM (ex: 2.0)"))
@@ -44,7 +44,7 @@ class SettingsActivity : AppCompatActivity() {
 
         val autoHideCheck = CheckBox(this).apply {
             text = "⚡ Ativar Auto-Ocultar automático para viagens abaixo do R$/km mínimo"
-            setTextColor(Color.WHITE)
+            setTextColor(getColor(R.color.app_text))
             textSize = 14f
             isChecked = settings.getAutoHideEnabled()
             setPadding(0, dp(4), 0, dp(8))
@@ -53,7 +53,7 @@ class SettingsActivity : AppCompatActivity() {
 
         val confirmHideCheck = CheckBox(this).apply {
             text = "Pedir confirmação ao ocultar manualmente viagens com valor R$/km abaixo da meta"
-            setTextColor(Color.WHITE)
+            setTextColor(getColor(R.color.app_text))
             textSize = 14f
             isChecked = settings.getConfirmHideBelowMinKm()
             setPadding(0, dp(4), 0, dp(12))
@@ -69,7 +69,7 @@ class SettingsActivity : AppCompatActivity() {
         root.addView(highProfitInput)
 
         // Category Colors
-        root.addView(TextView(this).apply { text = "Cores das Categorias"; setTextColor(Color.WHITE); textSize = 18f; setPadding(0, dp(30), 0, dp(10)) })
+        root.addView(TextView(this).apply { text = "Cores das Categorias"; setTextColor(getColor(R.color.app_text)); textSize = 18f; setPadding(0, dp(30), 0, dp(10)) })
         
         root.addView(createColorPickerSection("Uber X", SettingsManager.KEY_COLOR_UBER_X, SettingsManager.DEFAULT_UBER_X_COLOR, dp))
         root.addView(createColorPickerSection("Comfort", SettingsManager.KEY_COLOR_COMFORT, SettingsManager.DEFAULT_COMFORT_COLOR, dp))
@@ -77,7 +77,7 @@ class SettingsActivity : AppCompatActivity() {
         root.addView(createColorPickerSection("Flash", SettingsManager.KEY_COLOR_FLASH, SettingsManager.DEFAULT_FLASH_COLOR, dp))
 
         // Rating Colors
-        root.addView(TextView(this).apply { text = "Cores das Avaliações (Bordas)"; setTextColor(Color.WHITE); textSize = 18f; setPadding(0, dp(30), 0, dp(10)) })
+        root.addView(TextView(this).apply { text = "Cores das Avaliações (Bordas)"; setTextColor(getColor(R.color.app_text)); textSize = 18f; setPadding(0, dp(30), 0, dp(10)) })
         
         root.addView(createColorPickerSection("Excelente", SettingsManager.KEY_COLOR_EXCELLENT, SettingsManager.DEFAULT_EXCELLENT_COLOR, dp))
         root.addView(createColorPickerSection("Boa", SettingsManager.KEY_COLOR_GOOD, SettingsManager.DEFAULT_GOOD_COLOR, dp))
@@ -162,11 +162,11 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun createLabel(text: String) = TextView(this).apply { 
-        this.text = text; setTextColor(Color.LTGRAY); setPadding(0, 10, 0, 8); textSize = 15f
+        this.text = text; setTextColor(getColor(R.color.app_secondary)); setPadding(0, 10, 0, 8); textSize = 15f
     }
 
     private fun createEditText(value: String, inputType: Int) = EditText(this).apply {
-        setText(value); setTextColor(Color.WHITE); setBackgroundColor(Color.parseColor("#2C2C2C"))
+        setText(value); setTextColor(getColor(R.color.app_text)); setBackgroundColor(getColor(R.color.app_input))
         this.inputType = inputType; setPadding(25, 25, 25, 25)
     }
 }

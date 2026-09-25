@@ -1,0 +1,13 @@
+<resources>
+    <color name="app_accent">#38BDF8</color>
+    <color name="app_background">#0F172A</color>
+    <color name="app_error">#F87171</color>
+    <color name="app_input">#020617</color>
+    <color name="app_orange">#FB923C</color>
+    <color name="app_secondary">#94A3B8</color>
+    <color name="app_success">#4ADE80</color>
+    <color name="app_surface">#1E293B</color>
+    <color name="app_text">#FFFFFF</color>
+    <color name="app_warning">#FBBF24</color>
+    <bool name="light_system_bars">false</bool>
+</resources>
