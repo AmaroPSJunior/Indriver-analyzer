@@ -22,6 +22,19 @@ versionCode do APK antes de disponibilizá-lo.
 
 ## Atualizações seguintes
 
+Em Configurações, toque em **⬇️ Atualizar aplicativo**. O app consulta a release
+estável mais recente deste repositório, compara o número da versão instalada e,
+se houver uma versão maior, baixa o APK e abre o instalador do Android.
+Autorize a instalação por este aplicativo quando solicitado e confirme Atualizar.
+A confirmação do Android é obrigatória; não há instalação silenciosa.
+
+O download continua ao sair da tela. Reabra o botão para retomar o acompanhamento
+e abrir o instalador quando terminar. É possível cancelar e tentar novamente.
+O app verifica tamanho, SHA-256 (quando publicado pelo GitHub), identidade,
+versionCode e assinatura do APK antes de solicitar a instalação. APKs incompatíveis
+não são instalados. O atualizador usa o formato de release `v1.0.<versionCode>`
+publicado pelo workflow; ao mudar esse formato, atualize também ReleasePolicy.
+
 Baixe o APK da versão mais recente e abra-o no celular; confirme Atualizar.
 Não desinstale nem limpe os dados. Com ADB: adb install -r caminho/do/app.apk.
 Dados e permissões normalmente são preservados; permissões novas e acessos
