@@ -16,6 +16,7 @@ class UberAccessibilityService : AccessibilityService() {
     @Volatile
     private var isTaskPending = false
     private var lastScanTime = 0L
+    @Volatile private var lastFullText = ""
     
     private val scanHandler = android.os.Handler(android.os.Looper.getMainLooper())
     @Volatile private var destroyed = false
@@ -188,7 +189,7 @@ class UberAccessibilityService : AccessibilityService() {
                 }
             }
 
-            val fullText = sb.toString()
+            val fullText = capturedLines.joinToString(" | ") { it.text }
             if (fullText.isNotBlank() && (fullText != lastFullText || com.uberanalyzer.settings.SettingsManager(this).getAutoHideEnabled())) {
                 lastFullText = fullText
                 val lowerText = fullText.lowercase(java.util.Locale.getDefault())
