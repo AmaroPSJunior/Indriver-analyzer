@@ -73,8 +73,27 @@ class UberAccessibilityService : AccessibilityService() {
                         var processed = false
 
                         // 1. Tenta parsing por agrupamento espacial de Bounding Boxes (ML Kit Lines)
-                        if (lines.isNotEmpty()) {
+                        run {
                             val spatialRides = RideParser.parseInDriverSpatialLines(lines, fullImage)
+                            // Shadow trial: explicitly calibrated debug builds only; never changes live rides.
+                            if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0 && fullImage != null) {
+                                try {
+                                    val trialLines = lines.map { line ->
+                                        com.uberanalyzer.parser.StrictSpatialRideParser.Line(line.text, line.boundingBox?.let {
+                                            com.uberanalyzer.parser.StrictSpatialRideParser.Box(
+                                                it.left.toDouble(), it.top.toDouble(), it.right.toDouble(), it.bottom.toDouble()
+                                            )
+                                        })
+                                    }
+                                    com.uberanalyzer.parser.SpatialParserTrial.compare(
+                                        trialLines, fullImage.width, fullImage.height, spatialRides.size
+                                    )?.let { report ->
+                                        Log.d("SpatialParserTrial", "legacy=${report.legacyRideCount}, strict=${report.strict.rides.size}, rejected=${report.strict.rejectedCards}, unusedLines=${report.strict.unusedLines}")
+                                    }
+                                } catch (e: Exception) {
+                                    Log.w("SpatialParserTrial", "Trial failed; production parser is unchanged", e)
+                                }
+                            }
                             if (spatialRides.isNotEmpty()) {
                                 processed = processInDriverRides(spatialRides, isOcrSource = true)
                             }
