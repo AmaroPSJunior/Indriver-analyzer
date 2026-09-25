@@ -630,6 +630,7 @@ class MainActivity : AppCompatActivity() {
                     }).addTo(map);
 
                     var routeLayers = [];
+                    var mapGeneration = 0;
                     var ROUTE_COLORS = ['#00E5FF', '#22C55E', '#F59E0B', '#EC4899', '#A855F7', '#EAB308', '#14B8A6', '#3B82F6', '#F43F5E'];
                     var allRoutesData = [];
                     var routeLinesMap = {};
@@ -652,6 +653,7 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     function updateMultiRouteMap(routesJsonStr) {
+                        var generation = ++mapGeneration;
                         for (var i = 0; i < routeLayers.length; i++) {
                             map.removeLayer(routeLayers[i]);
                         }
@@ -760,6 +762,7 @@ class MainActivity : AppCompatActivity() {
                                     fetch(osrmUrl)
                                         .then(function(res) { return res.json(); })
                                         .then(function(data) {
+                                            if (generation !== mapGeneration) return;
                                             var latlngs;
                                             if (data && data.routes && data.routes.length > 0) {
                                                 latlngs = data.routes[0].geometry.coordinates.map(function(c) { return [c[1], c[0]]; });
@@ -779,6 +782,7 @@ class MainActivity : AppCompatActivity() {
                                             routeLinesMap[idx] = line;
                                         })
                                         .catch(function(err) {
+                                            if (generation !== mapGeneration) return;
                                             var latlngs = [[r.pLat, r.pLng], [r.dLat, r.dLng]];
                                             var line = L.polyline(latlngs, {
                                                 color: color,
@@ -894,7 +898,10 @@ class MainActivity : AppCompatActivity() {
 
     private val geocodeCache = ConcurrentHashMap<String, Pair<Double, Double>>()
 
+    private var routeRenderGeneration = 0L
+
     private fun displayRoutesOnMap(routes: List<RouteData>) {
+        val generation = ++routeRenderGeneration
         val maxRoutesConfig = settingsManager.getMaxRoutes()
         val limitedRoutes = routes.take(maxRoutesConfig)
         if (!isMapLoaded) {
@@ -971,7 +978,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             runOnUiThread {
-                renderCardsAndMapUi(limitedRoutes, jsRoutesArray)
+                if (generation == routeRenderGeneration) renderCardsAndMapUi(limitedRoutes, jsRoutesArray)
             }
         }.start()
     }
@@ -1198,7 +1205,7 @@ class MainActivity : AppCompatActivity() {
             card.addView(pickupText)
 
             val isRealDropoff = com.uberanalyzer.parser.RideParser.isRealAddress(route.dropoff)
-            val dropoffDisplay = if (isRealDropoff) route.dropoff else (if (route.dropoff.isNotBlank()) route.dropoff else "Definir destino no mapa")
+            val dropoffDisplay = if (isRealDropoff) route.dropoff else (if (route.dropoff.isNotBlank()) route.dropoff else "Destino não capturado")
             val dropoffText = TextView(this).apply {
                 text = "🟠 Destino: $dropoffDisplay"
                 setTextColor(if (isRealDropoff) Color.parseColor("#FB923C") else Color.parseColor("#64748B"))
