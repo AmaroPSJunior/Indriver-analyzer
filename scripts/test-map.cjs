@@ -19,7 +19,7 @@ let failRoute = false;
 function overlay(kind, options) {
     const layer = {kind, options, events: {}, addTo() { overlays.push(this); return this; },
         bindPopup() { return this; }, bindTooltip() { return this; },
-        on(event, fn) { this.events[event] = fn; return this; }, setStyle() {}, bringToFront() {}};
+        on(event, fn) { this.events[event] = fn; return this; }, setLatLngs(latlngs) { this.latlngs = latlngs; return this; }, setStyle() {}, bringToFront() {}};
     return layer;
 }
 const context = {
