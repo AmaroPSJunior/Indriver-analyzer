@@ -31,20 +31,20 @@ class HistoryActivity : AppCompatActivity() {
 
     private fun buildUI(): ScrollView {
         val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
-        val scrollView = ScrollView(this).apply { setBackgroundColor(Color.parseColor("#121212")); isFillViewport = true }
+        val scrollView = ScrollView(this).apply { setBackgroundColor(getColor(R.color.app_background)); isFillViewport = true }
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(16), dp(16), dp(16)) }
 
         val rides = db.getAllRides()
 
         // Header
-        root.addView(TextView(this).apply { 
-            text = "⚡ Histórico em JSON - inDriver"; setTextColor(Color.WHITE); textSize = 22f; typeface = Typeface.DEFAULT_BOLD 
+        root.addView(TextView(this).apply {
+            text = "⚡ Histórico em JSON - inDriver"; setTextColor(getColor(R.color.app_text)); textSize = 22f; typeface = Typeface.DEFAULT_BOLD
             setPadding(0, 0, 0, dp(12))
         })
 
         if (rides.isEmpty()) {
-            root.addView(TextView(this).apply { 
-                text = "Nenhuma corrida registrada da lista de espera inDriver ainda."; setTextColor(Color.GRAY); textSize = 16f
+            root.addView(TextView(this).apply {
+                text = "Nenhuma corrida registrada da lista de espera inDriver ainda."; setTextColor(getColor(R.color.app_secondary)); textSize = 16f
                 gravity = Gravity.CENTER; setPadding(0, dp(50), 0, 0)
             })
             scrollView.addView(root)
@@ -65,8 +65,8 @@ class HistoryActivity : AppCompatActivity() {
         root.addView(buildAnalyticsCard(rides, dp))
 
         // List Header
-        root.addView(TextView(this).apply { 
-            text = "Últimas Corridas Capturadas"; setTextColor(Color.LTGRAY); textSize = 14f; typeface = Typeface.DEFAULT_BOLD
+        root.addView(TextView(this).apply {
+            text = "Últimas Corridas Capturadas"; setTextColor(getColor(R.color.app_secondary)); textSize = 14f; typeface = Typeface.DEFAULT_BOLD
             setPadding(0, dp(20), 0, dp(10))
         })
 
@@ -94,17 +94,17 @@ class HistoryActivity : AppCompatActivity() {
     private fun buildAnalyticsCard(rides: List<RideRecord>, dp: (Int) -> Int): LinearLayout {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(16), dp(16), dp(16))
-            background = GradientDrawable().apply { setColor(Color.parseColor("#1E1E1E")); cornerRadius = dp(12).toFloat() }
+            background = GradientDrawable().apply { setColor(getColor(R.color.app_surface)); cornerRadius = dp(12).toFloat() }
         }
 
         val totalValue = rides.sumOf { it.price }
         val avgKm = rides.map { it.price / (if (it.distance > 0) it.distance else 1.0) }.average()
         val bestCategory = rides.groupBy { it.category }.maxByOrNull { it.value.size }?.key ?: "inDrive"
 
-        card.addView(TextView(this).apply { text = "RESUMO GERAL IN-DRIVER"; setTextColor(Color.GRAY); textSize = 12f; typeface = Typeface.DEFAULT_BOLD })
-        
+        card.addView(TextView(this).apply { text = "RESUMO GERAL IN-DRIVER"; setTextColor(getColor(R.color.app_secondary)); textSize = 12f; typeface = Typeface.DEFAULT_BOLD })
+
         val statsGrid = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; weightSum = 3f; setPadding(0, dp(10), 0, 0) }
-        
+
         statsGrid.addView(createStatItem("Total R$", String.format("%.2f", totalValue), 1f))
         statsGrid.addView(createStatItem("Média R$/KM", String.format("%.2f", avgKm), 1f))
         statsGrid.addView(createStatItem("Corridas", rides.size.toString(), 1f))
@@ -117,29 +117,29 @@ class HistoryActivity : AppCompatActivity() {
         orientation = LinearLayout.VERTICAL
         layoutParams = LinearLayout.LayoutParams(0, -2, weight)
         gravity = Gravity.CENTER
-        addView(TextView(context).apply { text = label; setTextColor(Color.GRAY); textSize = 10f; gravity = Gravity.CENTER })
-        addView(TextView(context).apply { text = value; setTextColor(Color.WHITE); textSize = 16f; typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER })
+        addView(TextView(context).apply { text = label; setTextColor(getColor(R.color.app_secondary)); textSize = 10f; gravity = Gravity.CENTER })
+        addView(TextView(context).apply { text = value; setTextColor(getColor(R.color.app_text)); textSize = 16f; typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER })
     }
 
     private fun buildRideItem(ride: RideRecord, sdf: SimpleDateFormat, dp: (Int) -> Int): LinearLayout {
         val item = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(12), dp(12), dp(12))
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) }
-            background = GradientDrawable().apply { 
-                setColor(Color.parseColor("#1A1A1A"))
-                cornerRadius = dp(8).toFloat() 
+            background = GradientDrawable().apply {
+                setColor(getColor(R.color.app_surface))
+                cornerRadius = dp(8).toFloat()
                 setStroke(dp(1), if (ride.score >= 8) Color.GREEN else if (ride.score >= 5) Color.YELLOW else Color.RED)
             }
         }
 
         val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val infoLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, -2, 1f) }
-        infoLayout.addView(TextView(this).apply { text = "${ride.category} • ${sdf.format(Date(ride.timestamp))}"; setTextColor(Color.GRAY); textSize = 11f })
-        infoLayout.addView(TextView(this).apply { text = "R$ ${String.format("%.2f", ride.price)} | ${ride.distance} KM"; setTextColor(Color.WHITE); textSize = 16f; typeface = Typeface.DEFAULT_BOLD })
-        
+        infoLayout.addView(TextView(this).apply { text = "${ride.category} • ${sdf.format(Date(ride.timestamp))}"; setTextColor(getColor(R.color.app_secondary)); textSize = 11f })
+        infoLayout.addView(TextView(this).apply { text = "R$ ${String.format("%.2f", ride.price)} | ${ride.distance} KM"; setTextColor(getColor(R.color.app_text)); textSize = 16f; typeface = Typeface.DEFAULT_BOLD })
+
         val scoreLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.END }
-        scoreLayout.addView(TextView(this).apply { text = "NOTA"; setTextColor(Color.GRAY); textSize = 10f })
-        scoreLayout.addView(TextView(this).apply { text = String.format("%.1f", ride.score); setTextColor(Color.WHITE); textSize = 18f; typeface = Typeface.DEFAULT_BOLD })
+        scoreLayout.addView(TextView(this).apply { text = "NOTA"; setTextColor(getColor(R.color.app_secondary)); textSize = 10f })
+        scoreLayout.addView(TextView(this).apply { text = String.format("%.1f", ride.score); setTextColor(getColor(R.color.app_text)); textSize = 18f; typeface = Typeface.DEFAULT_BOLD })
 
         topRow.addView(infoLayout)
         topRow.addView(scoreLayout)
@@ -148,7 +148,7 @@ class HistoryActivity : AppCompatActivity() {
         if (ride.lat != 0.0 && ride.lon != 0.0) {
             item.addView(TextView(this).apply {
                 text = "📍 Ver no Mapa (${String.format("%.4f", ride.lat)}, ${String.format("%.4f", ride.lon)})"
-                setTextColor(Color.parseColor("#38BDF8"))
+                setTextColor(getColor(R.color.app_accent))
                 textSize = 11f
                 setPadding(0, dp(4), 0, 0)
                 setOnClickListener {
@@ -179,7 +179,7 @@ class HistoryActivity : AppCompatActivity() {
         val root = JSONObject()
         root.put("app", "inDriver Driver Analyzer")
         root.put("total_records", rides.size)
-        
+
         val array = JSONArray()
         rides.forEach { r ->
             val item = JSONObject()
@@ -210,7 +210,7 @@ class HistoryActivity : AppCompatActivity() {
             textSize = 11f
             typeface = Typeface.MONOSPACE
             setPadding(30, 30, 30, 30)
-            setBackgroundColor(Color.parseColor("#0F172A"))
+            setBackgroundColor(getColor(R.color.app_background))
         }
 
         val sv = ScrollView(this).apply { addView(tv) }
