@@ -6,8 +6,12 @@ import com.uberanalyzer.model.RideData
 import java.util.Locale
 
 object RideParser {
-    private val priceRegex = Regex("R\\$\\s*([0-9]{1,3}(?:[.][0-9]{3})*[,.][0-9]{2}|[0-9]+)(?!\\s*/\\s*km)")
+    private val priceRegex = Regex(
+        "R\\$\\s*((?:[0-9]{1,3}(?:\\.[0-9]{3})+,[0-9]{2}|[0-9]+,[0-9]{1,2}|[0-9]+\\.[0-9]{1,2}|[0-9]+))(?![0-9.,])",
+        RegexOption.IGNORE_CASE
+    )
     private val perKmPriceRegex = Regex("R\\$\\s*([0-9]+(?:[,.][0-9]+)?)\\s*/\\s*km", RegexOption.IGNORE_CASE)
+    private val perKmSuffixRegex = Regex("^\\s*/\\s*km\\b", RegexOption.IGNORE_CASE)
     private val distanceRegex = Regex("~?\\s*([0-9]+[,.][0-9]+|[0-9]+)\\s*(km|m)\\b", RegexOption.IGNORE_CASE)
     private val timeRegex = Regex("([0-9]+)\\s*(min|minutos)", RegexOption.IGNORE_CASE)
     private val ratingRegex = Regex("([3-5][.,][0-9]{1,2})")
@@ -175,10 +179,7 @@ object RideParser {
             val passengerPhoto = if (croppedAvatarBase64.isNotBlank()) croppedAvatarBase64 else extractPassengerPhotoUrl(clusterTexts)
 
             // BLUE REGION: Main price (R$ XX)
-            val priceMatch = priceRegex.find(fullBlockText) ?: continue
-            val priceStr = priceMatch.groupValues[1].replace(".", "").replace(",", ".")
-            val price = priceStr.toDoubleOrNull() ?: continue
-            if (price <= 0.0) continue
+            val price = extractRidePrices(fullBlockText).firstOrNull() ?: continue
 
             // GREEN REGION: Rate per Km badge (R$ X,X/km)
             val perKmMatch = perKmPriceRegex.find(fullBlockText)
@@ -307,10 +308,7 @@ object RideParser {
             }
 
             // Main ride price (ignoring rate badge R$ X/km)
-            val priceMatch = priceRegex.find(trimmed) ?: continue
-            val priceStr = priceMatch.groupValues[1].replace(".", "").replace(",", ".")
-            val price = priceStr.toDoubleOrNull() ?: continue
-            if (price <= 0.0) continue
+            val price = extractRidePrices(trimmed).firstOrNull() ?: continue
 
             // Distances (pickup vs trip)
             val distanceMatches = distanceRegex.findAll(trimmed).toList()
@@ -644,10 +642,7 @@ object RideParser {
     }
 
     private fun parseSingleInDriver(text: String): InDriverRide? {
-        val priceMatch = priceRegex.find(text) ?: return null
-        val priceStr = priceMatch.groupValues[1].replace(".", "").replace(",", ".")
-        val price = priceStr.toDoubleOrNull() ?: return null
-        if (price <= 0.0) return null
+        val price = extractRidePrices(text).firstOrNull() ?: return null
 
         val distanceMatches = distanceRegex.findAll(text).toList()
         val parsedDistances = distanceMatches.mapNotNull { m ->
@@ -711,10 +706,7 @@ object RideParser {
         val lowerText = text.lowercase(Locale.getDefault())
         if (!lowerText.contains("r$")) return null
 
-        val prices = priceRegex.findAll(text).mapNotNull { 
-            val clean = it.groupValues[1].replace(".", "").replace(",", ".")
-            clean.toDoubleOrNull() 
-        }.toList()
+        val prices = extractRidePrices(text)
         
         val price = prices.maxOrNull() ?: return null
 
@@ -732,7 +724,25 @@ object RideParser {
 
         return RideData(price, dist, time, RideCategory.fromString(text), text)
     }
+
+    /** Returns only total ride prices, never the R$/km profitability badge. */
+    internal fun extractRidePrices(text: String): List<Double> = priceRegex.findAll(text).mapNotNull { match ->
+        val suffix = text.substring(match.range.last + 1)
+        if (perKmSuffixRegex.containsMatchIn(suffix)) {
+            return@mapNotNull null
+        }
+
+        parseBrazilianMoney(match.groupValues[1])?.takeIf { it > 0.0 }
+    }.toList()
+
+    private fun parseBrazilianMoney(raw: String): Double? {
+        val value = raw.trim()
+        val normalized = when {
+            value.contains(',') -> value.replace(".", "").replace(',', '.')
+            value.count { it == '.' } == 1 && value.substringAfter('.').length in 1..2 -> value
+            else -> value.replace(".", "")
+        }
+        return normalized.toDoubleOrNull()
+    }
 }
-
-
 
