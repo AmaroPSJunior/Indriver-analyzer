@@ -564,7 +564,7 @@ class MainActivity : AppCompatActivity() {
                         font-weight: 900; font-size: 13px; color: #0F172A;
                     }
                     .avatar-badge-container {
-                        display: flex; flex-direction: column; align-items: center; pointer-events: none;
+                        position: absolute; bottom: 0; width: 32px; display: flex; flex-direction: column; align-items: center; pointer-events: none;
                     }
                     .avatar-circle {
                         width: 38px; height: 38px; border-radius: 50%;
@@ -606,17 +606,17 @@ class MainActivity : AppCompatActivity() {
                         text-align: center;
                     }
                     .origin-circle {
-                        width: 48px; height: 48px; border-radius: 50%;
+                        box-sizing: border-box; flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; font-size: 18px;
                         display: flex; align-items: center; justify-content: center;
                         background: #16A34A; color: #FFFFFF;
-                        box-shadow: 0 4px 16px rgba(0,0,0,0.95);
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.6);
                         margin-top: 4px;
                     }
                     .destination-circle {
-                        width: 48px; height: 48px; border-radius: 50%;
+                        box-sizing: border-box; flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; font-size: 18px;
                         display: flex; align-items: center; justify-content: center;
                         background: #DC2626; color: #FFFFFF;
-                        box-shadow: 0 4px 16px rgba(0,0,0,0.95);
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.6);
                     }
                 </style>
             </head>
@@ -639,9 +639,9 @@ class MainActivity : AppCompatActivity() {
                         if (!lat || !lng) return;
                         var userIcon = L.divIcon({
                             className: '',
-                            html: '<div style="display:flex;align-items:center;justify-content:center;width:40px;height:40px;background:#2563EB;border:3px solid #FFFFFF;border-radius:50%;box-shadow:0 0 16px #3B82F6,0 4px 12px rgba(0,0,0,0.85);font-size:22px;">🚘</div>',
-                            iconSize: [40, 40],
-                            iconAnchor: [20, 20]
+                            html: '<div style="display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:30px;height:30px;background:#2563EB;border:2px solid #FFFFFF;border-radius:50%;box-shadow:0 2px 4px rgba(0,0,0,0.6);font-size:18px;">🚘</div>',
+                            iconSize: [30, 30],
+                            iconAnchor: [15, 15]
                         });
                         if (driverLocationMarker) {
                             driverLocationMarker.setLatLng([lat, lng]);
@@ -692,27 +692,27 @@ class MainActivity : AppCompatActivity() {
                                     nameHtml = '<div class="passenger-name-pill" style="border-color: ' + color + '; color: ' + color + ';">👤 ' + passName + '</div>';
                                 }
 
-                                var fatUpSvg = '<svg width="28" height="28" viewBox="0 0 24 24" fill="#FFFFFF" style="filter: drop-shadow(0 2px 3px rgba(0,0,0,0.6));"><path d="M12 2L3 12h6v10h6V12h6L12 2z"/></svg>';
-                                var fatDownSvg = '<svg width="28" height="28" viewBox="0 0 24 24" fill="#FFFFFF" style="filter: drop-shadow(0 2px 3px rgba(0,0,0,0.6));"><path d="M12 22l9-10h-6V2H9v10H3l9 10z"/></svg>';
+                                var pickupArrow = '⬆️';
+                                var dropoffArrow = '⬇️';
 
                                 var pickupHtml = '<div class="avatar-badge-container">' + 
                                     photoHtml + nameHtml +
-                                    '<div class="origin-circle" style="background-color: #16A34A; border: 4px solid ' + color + ';">' + fatUpSvg + '</div>' +
+                                    '<div class="origin-circle" style="background-color: #16A34A; border: 2px solid ' + color + ';">' + pickupArrow + '</div>' +
                                 '</div>';
 
-                                var dropoffHtml = '<div class="destination-circle" style="background-color: #DC2626; border: 4px solid ' + color + ';">' + fatDownSvg + '</div>';
+                                var dropoffHtml = '<div class="destination-circle" style="background-color: #DC2626; border: 2px solid ' + color + ';">' + dropoffArrow + '</div>';
 
                                 var pickupIcon = L.divIcon({
                                     className: '',
                                     html: pickupHtml,
-                                    iconSize: [66, 96],
-                                    iconAnchor: [33, 86]
+                                    iconSize: [32, 32],
+                                    iconAnchor: [16, 16]
                                 });
                                 var dropoffIcon = L.divIcon({
                                     className: '',
                                     html: dropoffHtml,
-                                    iconSize: [50, 50],
-                                    iconAnchor: [25, 25]
+                                    iconSize: [32, 32],
+                                    iconAnchor: [16, 16]
                                 });
 
                                 function isRealAddressJS(addr) {
