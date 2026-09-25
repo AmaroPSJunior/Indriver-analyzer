@@ -36,7 +36,7 @@ jobs:
           fi
 
       - name: Build with Gradle
-        run: gradle assembleDebug -PbuildNumber=${{ github.run_number }}
+        run: gradle testDebugUnitTest assembleDebug -PbuildNumber=${{ github.run_number }}
 
       - name: Renomear arquivo APK
         run: |

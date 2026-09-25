@@ -507,6 +507,7 @@ class MainActivity : AppCompatActivity() {
             loadWithOverviewMode = true
             useWideViewPort = true
             setGeolocationEnabled(true)
+            userAgentString = userAgentString + " inDriveAnalyzer"
             cacheMode = WebSettings.LOAD_DEFAULT
         }
         webView.addJavascriptInterface(object {
@@ -540,6 +541,7 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 isMapLoaded = true
+                applyMapProvider()
                 userLat?.let { uLat ->
                     userLng?.let { uLng ->
                         updateDriverLocationOnMap(uLat, uLng)
@@ -560,9 +562,16 @@ class MainActivity : AppCompatActivity() {
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
                 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
                 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+                <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.css" />
+                <script src="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
+                <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.0/leaflet-maplibre-gl.js"></script>
                 <style>
                     body, html, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #0F172A; }
                     .leaflet-popup-content-wrapper { background: #1E293B; color: #F8FAFC; border-radius: 8px; border: 1px solid #38BDF8; font-family: sans-serif; font-size: 13px; }
+                    /* Only OSM base tiles are filtered; route colors and markers stay intact. */
+                    .osm-dark-tiles { filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9); }
+                    .leaflet-control-attribution { background: #1E293B !important; color: #F8FAFC; }
+                    .leaflet-control-attribution a { color: #7DD3FC; }
                     .leaflet-popup-tip { background: #1E293B; }
                     .custom-badge {
                         width: 32px; height: 32px; border-radius: 50%;
@@ -640,12 +649,46 @@ class MainActivity : AppCompatActivity() {
                 <div id="map"></div>
                 <script>
                     var map = L.map('map', {zoomControl: false}).setView([-23.56168, -46.65598], 13);
-                    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/${if ((resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES) "dark_all" else "voyager"}/{z}/{x}/{y}{r}.png', {
-                        attribution: '© OpenStreetMap contributors',
-                        maxZoom: 19
-                    }).addTo(map);
+                    var baseLayer = null;
+                    var mapNotice = L.control({position: 'topleft'});
+                    mapNotice.onAdd = function() {
+                        this.message = L.DomUtil.create('div');
+                        this.message.style.cssText = 'background:white;color:#222;padding:6px;max-width:230px;display:none';
+                        return this.message;
+                    };
+                    mapNotice.addTo(map);
+                    function showMapError() {
+                        mapNotice.message.textContent = 'Mapa indisponível. Abra ⚙️ e escolha outro mapa.';
+                        mapNotice.message.style.display = 'block';
+                    }
+                    function setMapProvider(provider, key, darkMode) {
+                        if (baseLayer) { map.removeLayer(baseLayer); baseLayer = null; }
+                        mapNotice.message.style.display = 'none';
+                        var osmCredit = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+                        try {
+                            if (provider === 'openfreemap') {
+                                baseLayer = L.maplibreGL({
+                                    style: 'https://tiles.openfreemap.org/styles/' + (darkMode ? 'dark' : 'liberty'),
+                                    attribution: '<a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://openmaptiles.org">OpenMapTiles</a> ' + osmCredit
+                                }).addTo(map);
+                                baseLayer.getMaplibreMap().on('error', showMapError);
+                            } else {
+                                if (provider === 'carto' && !key) { showMapError(); return; }
+                                var url = provider === 'carto'
+                                    ? 'https://{s}.basemaps.cartocdn.com/' + (darkMode ? 'dark_all' : 'rastertiles/voyager') + '/{z}/{x}/{y}.png?key=' + encodeURIComponent(key)
+                                    : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+                                baseLayer = L.tileLayer(url, {
+                                    attribution: osmCredit + (provider === 'carto' ? ' &copy; <a href="https://carto.com/attributions">CARTO</a>' : ''),
+                                    maxZoom: 19, updateWhenIdle: true, keepBuffer: 1,
+                                    className: provider === 'osm' && darkMode ? 'osm-dark-tiles' : ''
+                                }).addTo(map);
+                                baseLayer.on('tileerror', showMapError);
+                            }
+                        } catch (error) { showMapError(); }
+                    }
 
                     var routeLayers = [];
+                    var mapGeneration = 0;
                     var ROUTE_COLORS = ['#00E5FF', '#22C55E', '#F59E0B', '#EC4899', '#A855F7', '#EAB308', '#14B8A6', '#3B82F6', '#F43F5E'];
                     var allRoutesData = [];
                     var routeLinesMap = {};
@@ -851,7 +894,7 @@ class MainActivity : AppCompatActivity() {
             </html>
         """.trimIndent()
 
-        webView.loadDataWithBaseURL("https://openstreetmap.org", mapHtml, "text/html", "UTF-8", null)
+        webView.loadDataWithBaseURL("https://indrive-analyzer.invalid/", mapHtml, "text/html", "UTF-8", null)
     }
 
     private fun setupLocationTracking() {
@@ -921,7 +964,10 @@ class MainActivity : AppCompatActivity() {
 
     private val geocodeCache = ConcurrentHashMap<String, Pair<Double, Double>>()
 
+    private var routeRenderGeneration = 0L
+
     private fun displayRoutesOnMap(routes: List<RouteData>) {
+        val generation = ++routeRenderGeneration
         val maxRoutesConfig = settingsManager.getMaxRoutes()
         val limitedRoutes = routes.take(maxRoutesConfig)
         if (!isMapLoaded) {
@@ -1000,7 +1046,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             runOnUiThread {
-                renderCardsAndMapUi(limitedRoutes, jsRoutesArray)
+                if (generation == routeRenderGeneration) renderCardsAndMapUi(limitedRoutes, jsRoutesArray)
             }
         }.start()
     }
@@ -1181,7 +1227,7 @@ class MainActivity : AppCompatActivity() {
             card.addView(pickupText)
 
             val isRealDropoff = com.uberanalyzer.parser.RideParser.isRealAddress(route.dropoff)
-            val dropoffDisplay = if (isRealDropoff) route.dropoff else (if (route.dropoff.isNotBlank()) route.dropoff else "Definir destino no mapa")
+            val dropoffDisplay = if (isRealDropoff) route.dropoff else (if (route.dropoff.isNotBlank()) route.dropoff else "Destino não capturado")
             val dropoffText = TextView(this).apply {
                 text = "🟠 Destino: $dropoffDisplay"
                 setTextColor(if (isRealDropoff) getColor(R.color.app_orange) else Color.parseColor("#64748B"))
@@ -1269,7 +1315,7 @@ class MainActivity : AppCompatActivity() {
             val query = URLEncoder.encode(clean, "UTF-8")
             val url = URL("https://nominatim.openstreetmap.org/search?format=json&q=$query&limit=1&countrycodes=br")
             val conn = url.openConnection() as HttpURLConnection
-            conn.setRequestProperty("User-Agent", "inDriveAnalyzer/1.0 (Android)")
+            conn.setRequestProperty("User-Agent", "inDriveAnalyzer1.0 (Android)")
             conn.connectTimeout = 3000
             conn.readTimeout = 3000
             if (conn.responseCode == 200) {
@@ -1341,6 +1387,14 @@ class MainActivity : AppCompatActivity() {
         displayRoutesOnMap(emptyList())
     }
 
+    private fun applyMapProvider() {
+        if (!isMapLoaded) return
+        val provider = org.json.JSONObject.quote(settingsManager.getMapProvider())
+        val key = org.json.JSONObject.quote(settingsManager.getCartoMapKey())
+        val darkMode = settingsManager.getDarkMapEnabled()
+        webView.evaluateJavascript("setMapProvider($provider, $key, $darkMode)", null)
+    }
+
     private fun showMapSettingsDialog() {
         val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
         
@@ -1363,6 +1417,71 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 0, 0, dp(14))
         }
         dialogView.addView(title)
+
+        dialogView.addView(androidx.appcompat.widget.SwitchCompat(this).apply {
+            text = "🌙 Modo escuro do mapa"
+            setTextColor(Color.WHITE)
+            isChecked = settingsManager.getDarkMapEnabled()
+            setPadding(0, dp(8), 0, dp(8))
+            setOnCheckedChangeListener { _, enabled ->
+                settingsManager.setDarkMapEnabled(enabled)
+                applyMapProvider()
+            }
+        })
+        dialogView.addView(TextView(this).apply {
+            text = "A interface já usa tema escuro. Esta opção também escurece o mapa e fica salva automaticamente."
+            setTextColor(Color.LTGRAY)
+            textSize = 12f
+        })
+
+        val mapProviders = listOf("osm", "openfreemap", "carto")
+        val providerNames = listOf("OpenStreetMap — grátis, sem chave", "OpenFreeMap — grátis, sem chave", "CARTO Voyager — faixa grátis, exige chave")
+        dialogView.addView(TextView(this).apply {
+            text = "🗺️ Provedor do mapa"
+            setTextColor(Color.WHITE)
+            textSize = 16f
+        })
+        val providerGroup = android.widget.RadioGroup(this)
+        mapProviders.forEachIndexed { index, provider ->
+            providerGroup.addView(android.widget.RadioButton(this).apply {
+                id = android.view.View.generateViewId()
+                tag = provider
+                text = providerNames[index]
+                setTextColor(Color.WHITE)
+                isChecked = settingsManager.getMapProvider() == provider
+            })
+        }
+        dialogView.addView(providerGroup)
+        val mapKeyInput = android.widget.EditText(this).apply {
+            hint = "Chave CARTO (somente para CARTO)"
+            setHintTextColor(Color.LTGRAY)
+            setTextColor(Color.WHITE)
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setText(settingsManager.getCartoMapKey())
+        }
+        dialogView.addView(mapKeyInput)
+        dialogView.addView(TextView(this).apply {
+            text = "Se o mapa atingir o limite ou ficar indisponível, escolha outro e toque em Aplicar. Serviços gratuitos têm políticas de uso e podem ficar indisponíveis."
+            setTextColor(Color.LTGRAY)
+            textSize = 12f
+        })
+        dialogView.addView(Button(this).apply {
+            text = "🗺️ Aplicar mapa"
+            setOnClickListener {
+                val selected = providerGroup.findViewById<android.widget.RadioButton>(providerGroup.checkedRadioButtonId)
+                val provider = selected?.tag as? String ?: "osm"
+                val key = mapKeyInput.text.toString().trim()
+                if (provider == "carto" && key.isBlank()) {
+                    mapKeyInput.error = "Informe a chave gratuita da CARTO ou escolha outro mapa"
+                } else {
+                    settingsManager.setCartoMapKey(key)
+                    settingsManager.setMapProvider(provider)
+                    applyMapProvider()
+                    Toast.makeText(this@MainActivity, "Mapa atualizado", Toast.LENGTH_SHORT).show()
+                }
+            }
+        })
 
         // --- Seção: Ferramentas & Ações Rápida ---
         val toolsLabel = TextView(this).apply {
