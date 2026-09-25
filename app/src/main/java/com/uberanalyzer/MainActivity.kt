@@ -192,6 +192,7 @@ class MainActivity : ThemedActivity() {
         super.onCreate(savedInstanceState)
         supportActionBar?.hide()
         settingsManager = com.uberanalyzer.settings.SettingsManager(this)
+        settingsManager.syncMapInterestPoints()
         setContentView(buildUI())
 
         val filter = IntentFilter("com.uberanalyzer.ACTION_INDRIVE_ROUTE_DETECTED")
