@@ -61,6 +61,7 @@ class MainActivity : ThemedActivity() {
     private lateinit var accStatusView: TextView
     private lateinit var accButton: Button
     private lateinit var titleText: TextView
+    private var cardsMinimized = false
     private lateinit var routesCardsContainer: LinearLayout
     private lateinit var webView: WebView
 
@@ -363,8 +364,7 @@ class MainActivity : ThemedActivity() {
         }
 
         val cardPreferences = getSharedPreferences("map_layout", MODE_PRIVATE)
-        var cardsMinimized = cardPreferences.getBoolean("cards_minimized", false)
-        lateinit var cardsScroll: HorizontalScrollView
+        cardsMinimized = cardPreferences.getBoolean("cards_minimized", false)
 
         // --- Top Header Panel ---
         val header = LinearLayout(this).apply {
@@ -393,20 +393,6 @@ class MainActivity : ThemedActivity() {
             setPadding(0, 0, dp(8), 0)
         }
 
-        val refreshButton = Button(this).apply {
-            text = "🔄 Atualizar Fila"
-            textSize = 11f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#10B981"))
-            setPadding(dp(10), dp(4), dp(10), dp(4))
-            layoutParams = LinearLayout.LayoutParams(-2, -2).apply {
-                setMargins(dp(4), 0, 0, 0)
-            }
-            setOnClickListener {
-                UberAccessibilityService.triggerScan(this@MainActivity)
-            }
-        }
-
         autoHideSwitch = androidx.appcompat.widget.SwitchCompat(this).apply {
             text = "⚡ Auto-Ocultar "
             textSize = 11f
@@ -428,34 +414,38 @@ class MainActivity : ThemedActivity() {
         }
 
         val configButton = Button(this).apply {
-            text = "⚙️ Configurações"
-            textSize = 11f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#4F46E5"))
-            setPadding(dp(10), dp(4), dp(10), dp(4))
-            layoutParams = LinearLayout.LayoutParams(-2, -2).apply {
-                setMargins(dp(4), 0, 0, 0)
-            }
+            text = "☰"
+            contentDescription = "Abrir configurações"
+            tooltipText = contentDescription
+            textSize = 24f
+            setTextColor(getColor(R.color.app_text))
+            setBackgroundColor(Color.TRANSPARENT)
+            minWidth = 0
+            minimumWidth = 0
+            setPadding(0, 0, 0, 0)
             setOnClickListener { showMapSettingsDialog() }
         }
 
         titleRow.addView(titleText)
-        titleRow.addView(refreshButton)
         titleRow.addView(autoHideSwitch)
-        titleRow.addView(configButton)
         titleScrollView.addView(titleRow)
         val cardsToggle = Button(this).apply {
-            text = if (cardsMinimized) "🔽 Mostrar cards" else "🔼 Minimizar cards"
-            contentDescription = text
-            textSize = 11f
+            text = if (cardsMinimized) "⌄" else "⌃"
+            contentDescription = if (cardsMinimized) "Expandir cards" else "Recolher cards"
+            tooltipText = contentDescription
+            textSize = 28f
+            setBackgroundColor(Color.TRANSPARENT)
+            minWidth = 0
+            minimumWidth = 0
             setTextColor(getColor(R.color.app_text))
             setPadding(dp(8), dp(4), dp(8), dp(4))
             setOnClickListener {
                 cardsMinimized = !cardsMinimized
                 cardPreferences.edit().putBoolean("cards_minimized", cardsMinimized).apply()
-                cardsScroll.visibility = if (cardsMinimized) View.GONE else View.VISIBLE
-                text = if (cardsMinimized) "🔽 Mostrar cards" else "🔼 Minimizar cards"
-                contentDescription = text
+                applyCardsDisplayMode()
+                text = if (cardsMinimized) "⌄" else "⌃"
+                contentDescription = if (cardsMinimized) "Expandir cards" else "Recolher cards"
+                tooltipText = contentDescription
             }
         }
         // Keep the toggle visible even when the other header actions scroll horizontally.
@@ -463,7 +453,8 @@ class MainActivity : ThemedActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             addView(titleScrollView, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(cardsToggle, LinearLayout.LayoutParams(-2, -2))
+            addView(cardsToggle, LinearLayout.LayoutParams(dp(48), dp(48)))
+            addView(configButton, LinearLayout.LayoutParams(dp(48), dp(48)))
         })
 
         accStatusView = TextView(this).apply {
@@ -492,8 +483,6 @@ class MainActivity : ThemedActivity() {
         routesCardsContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
-        cardsScroll = scrollView
-        cardsScroll.visibility = if (cardsMinimized) View.GONE else View.VISIBLE
         scrollView.addView(routesCardsContainer)
         header.addView(scrollView)
 
@@ -1093,6 +1082,26 @@ class MainActivity : ThemedActivity() {
 
     }
 
+    private fun applyCardsDisplayMode() {
+        val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
+        for (index in 0 until routesCardsContainer.childCount) {
+            val card = routesCardsContainer.getChildAt(index) as? LinearLayout ?: continue
+            if (card.tag != "ride_card") continue
+            card.layoutParams = (card.layoutParams as LinearLayout.LayoutParams).apply {
+                width = dp(if (cardsMinimized) 140 else 230)
+            }
+            card.setPadding(dp(10), dp(if (cardsMinimized) 4 else 8), dp(10), dp(if (cardsMinimized) 4 else 8))
+            card.findViewWithTag<View>("card_badge")?.visibility = if (cardsMinimized) View.GONE else View.VISIBLE
+            for (childIndex in 0 until card.childCount) {
+                val child = card.getChildAt(childIndex)
+                when (child.tag) {
+                    "card_detail" -> child.visibility = if (cardsMinimized) View.GONE else View.VISIBLE
+                    "card_compact_metric" -> child.visibility = if (cardsMinimized) View.VISIBLE else View.GONE
+                }
+            }
+        }
+    }
+
     private fun renderCardsAndMapUi(limitedRoutes: List<RouteData>, jsRoutesArray: JSONArray) {
         val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
         routesCardsContainer.removeAllViews()
@@ -1109,6 +1118,7 @@ class MainActivity : ThemedActivity() {
             val colorInt = Color.parseColor(colorHex)
 
             val card = LinearLayout(this).apply {
+                tag = "ride_card"
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(10), dp(8), dp(10), dp(8))
                 background = GradientDrawable().apply {
@@ -1127,6 +1137,7 @@ class MainActivity : ThemedActivity() {
             }
 
             val badge = TextView(this).apply {
+                tag = "card_badge"
                 text = if (index == 0) "TOPO" else "FILA"
                 setTextColor(Color.parseColor("#0F172A"))
                 textSize = 11f
@@ -1149,6 +1160,16 @@ class MainActivity : ThemedActivity() {
             topRow.addView(badge)
             topRow.addView(priceTitle)
             card.addView(topRow)
+
+            val compactValuePerKm = route.earningsPerKm.takeIf { it.isFinite() && it > 0.0 }
+                ?: (route.price / route.distanceKm).takeIf { route.distanceKm > 0.0 && it.isFinite() && it > 0.0 }
+            card.addView(TextView(this).apply {
+                tag = "card_compact_metric"
+                text = compactValuePerKm?.let { String.format(Locale.getDefault(), "R$ %.2f/km", it) } ?: "R$ —/km"
+                setTextColor(getColor(R.color.app_text))
+                textSize = 12f
+                typeface = Typeface.DEFAULT_BOLD
+            })
 
             val passRow = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -1190,6 +1211,7 @@ class MainActivity : ThemedActivity() {
                 passRow.addView(passIcon)
             }
             passRow.addView(passName)
+            passRow.tag = "card_detail"
             card.addView(passRow)
 
             if (settingsManager.getShowRouteMetrics()) {
@@ -1205,7 +1227,8 @@ class MainActivity : ThemedActivity() {
                     typeface = Typeface.DEFAULT_BOLD
                     setPadding(0, dp(2), 0, dp(3))
                 }
-                card.addView(infoText)
+                infoText.tag = "card_detail"
+            card.addView(infoText)
             }
 
             val isRealPickup = com.uberanalyzer.parser.RideParser.isRealAddress(route.pickup)
@@ -1217,6 +1240,7 @@ class MainActivity : ThemedActivity() {
                 maxLines = 2
                 ellipsize = android.text.TextUtils.TruncateAt.END
             }
+            pickupText.tag = "card_detail"
             card.addView(pickupText)
 
             val isRealDropoff = com.uberanalyzer.parser.RideParser.isRealAddress(route.dropoff)
@@ -1228,6 +1252,7 @@ class MainActivity : ThemedActivity() {
                 maxLines = 2
                 ellipsize = android.text.TextUtils.TruncateAt.END
             }
+            dropoffText.tag = "card_detail"
             card.addView(dropoffText)
 
             card.setOnClickListener {
@@ -1240,6 +1265,8 @@ class MainActivity : ThemedActivity() {
 
             routesCardsContainer.addView(card)
         }
+
+        applyCardsDisplayMode()
 
         val jsonStr = JSONObject.quote(jsRoutesArray.toString())
         val jsCall = "javascript:updateMultiRouteMap($jsonStr);"
