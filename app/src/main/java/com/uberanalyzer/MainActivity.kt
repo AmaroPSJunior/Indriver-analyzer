@@ -726,12 +726,17 @@ class MainActivity : ThemedActivity() {
 
                                 var fare = Number(r.price).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
                                 var nameHtml = '<div class="ride-price-pill" style="border-color: ' + color + ';">' + escapeHtml(fare) + '</div>';
-                                function selectOriginalRide() {
+                                function selectOriginalRide(event) {
+                                    if (event && event.originalEvent && event.originalEvent.preventDefault) {
+                                        event.originalEvent.preventDefault();
+                                    }
                                     if (generation !== mapGeneration) return;
-                                    window.focusRouteByIdx(idx);
+                                    // Send the native open request first. Focusing the map is secondary and
+                                    // must never delay opening the original inDrive ride.
                                     if (window.AndroidBridge && AndroidBridge.openRide) {
                                         AndroidBridge.openRide(JSON.stringify({pickup: r.pickup, dropoff: r.dropoff, price: r.price}));
                                     }
+                                    window.focusRouteByIdx(idx);
                                 }
 
                                 var pickupArrow = '&#8593;';
@@ -762,14 +767,14 @@ class MainActivity : ThemedActivity() {
 
                                 if (hasPickup) {
                                     var pMarker = L.marker([r.pLat, r.pLng], {icon: pickupIcon}).addTo(map)
-                                        .bindPopup('<b>🟢 EMBARQUE • ' + escapeHtml(fare) + '</b><br>📍 ' + escapeHtml(r.pickup)).on('click', selectOriginalRide);
+                                        .bindTooltip('<b>🟢 EMBARQUE • ' + escapeHtml(fare) + '</b><br>📍 ' + escapeHtml(r.pickup), {sticky: true}).on('click', selectOriginalRide);
                                     routeLayers.push(pMarker);
                                     groupLayers.push(pMarker);
                                 }
 
                                 if (hasDropoff) {
                                     var dMarker = L.marker([r.dLat, r.dLng], {icon: dropoffIcon}).addTo(map)
-                                        .bindPopup('<b>🔴 DESEMBARQUE • ' + escapeHtml(fare) + '</b><br>🏁 ' + escapeHtml(r.dropoff)).on('click', selectOriginalRide);
+                                        .bindTooltip('<b>🔴 DESEMBARQUE • ' + escapeHtml(fare) + '</b><br>🏁 ' + escapeHtml(r.dropoff), {sticky: true}).on('click', selectOriginalRide);
                                     routeLayers.push(dMarker);
                                     groupLayers.push(dMarker);
                                 }
@@ -777,10 +782,11 @@ class MainActivity : ThemedActivity() {
                                 // Draw polyline route ONLY if both pickup and dropoff locations are valid
                                 if (hasPickup && hasDropoff) {
                                     var osrmUrl = 'https://router.project-osrm.org/route/v1/driving/' + r.pLng + ',' + r.pLat + ';' + r.dLng + ',' + r.dLat + '?overview=full&geometries=geojson';
-                                    // Exibe uma linha clicável imediatamente; o traçado OSRM apenas melhora o desenho depois.
-                                    var line = L.polyline([[r.pLat, r.pLng], [r.dLat, r.dLng]], {
+                                    // Keep a hit target available immediately, but do not draw a
+                                    // misleading straight route while the street geometry is loading.
+                                    var line = L.polyline([], {
                                         color: color,
-                                        weight: 6,
+                                        weight: 8,
                                         opacity: 0.95,
                                         smoothFactor: 1
                                     }).addTo(map);
@@ -796,14 +802,15 @@ class MainActivity : ThemedActivity() {
                                             if (data && data.routes && data.routes.length > 0) {
                                                 latlngs = data.routes[0].geometry.coordinates.map(function(c) { return [c[1], c[0]]; });
                                             } else {
-                                                latlngs = [[r.pLat, r.pLng], [r.dLat, r.dLng]];
+                                                return;
                                             }
                                             line.setLatLngs(latlngs);
                                         })
                                         .catch(function(err) {
                                             if (generation !== mapGeneration) return;
-                                            var latlngs = [[r.pLat, r.pLng], [r.dLat, r.dLng]];
-                                            line.setLatLngs(latlngs);
+                                            // Keep the route hidden when routing is unavailable. A straight
+                                            // segment would suggest a road that was never calculated.
+                                            line.setLatLngs([]);
                                         });
                                 }
                             })(idx);
