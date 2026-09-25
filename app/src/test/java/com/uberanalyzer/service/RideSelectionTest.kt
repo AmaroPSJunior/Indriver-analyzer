@@ -11,7 +11,7 @@ class RideSelectionTest {
 
     @Test fun rejectsExpiredInvalidatedOrMissingCapture() {
         assertFalse(RideSelection.isFresh(1000, 2501, 900))
-        assertFalse(RideSelection.isFresh(1000, 1200, 1100))
+        assertFalse(RideSelection.isFresh(1000, 1200, 1800))
         assertFalse(RideSelection.isFresh(0, 100, 0))
         assertFalse(RideSelection.isFresh(1000, 999, 900))
     }
