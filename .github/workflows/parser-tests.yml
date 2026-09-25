@@ -16,5 +16,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Run Android unit tests
-        run: bash ./gradlew testDebugUnitTest --no-daemon
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Test map
+        run: node scripts/test-map.cjs
+      - name: Compile and run Android unit tests
+        run: bash ./gradlew compileDebugKotlin testDebugUnitTest --no-daemon

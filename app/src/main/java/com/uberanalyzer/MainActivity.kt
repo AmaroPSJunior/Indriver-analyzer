@@ -1378,6 +1378,12 @@ class MainActivity : ThemedActivity() {
             setPadding(0, 0, 0, dp(14))
         }
         dialogView.addView(title)
+        dialogView.addView(Button(this).apply {
+            text = "⬇️ Atualizar aplicativo"
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, AppUpdateActivity::class.java))
+            }
+        })
 
         dialogView.addView(TextView(this).apply {
             text = "🎨 Aparência do aplicativo e do mapa"

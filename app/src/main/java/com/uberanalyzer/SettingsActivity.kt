@@ -38,6 +38,13 @@ class SettingsActivity : ThemedActivity() {
         root.addView(TextView(this).apply { text = "Configurações de Análise"; setTextColor(getColor(R.color.app_text)); textSize = 22f; typeface = Typeface.DEFAULT_BOLD; setPadding(0, 0, 0, dp(25)) })
 
         // Thresholds
+        root.addView(Button(this).apply {
+            text = "⬇️ Atualizar aplicativo"
+            setOnClickListener {
+                startActivity(android.content.Intent(this@SettingsActivity, AppUpdateActivity::class.java))
+            }
+        })
+
         root.addView(createLabel("Meta R$ / KM (ex: 2.0)"))
         val kmInput = createEditText(settings.getMinKmValue().toString(), InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL)
         root.addView(kmInput)
