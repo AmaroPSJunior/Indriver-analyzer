@@ -56,7 +56,7 @@ class AppUpdateActivity : ThemedActivity() {
             setTextColor(getColor(R.color.app_text))
         })
         root.addView(TextView(this).apply {
-            text = "Versão instalada: ${packageManager.getPackageInfo(packageName, 0).versionName}\nA atualização mantém seus dados. Confirme a instalação quando o Android solicitar."
+            text = "v${packageManager.getPackageInfo(packageName, 0).versionName}\nA atualização mantém seus dados. Confirme a instalação quando o Android solicitar."
             setTextColor(getColor(R.color.app_text))
             setPadding(0, padding, 0, padding)
         })
