@@ -11,3 +11,20 @@ create table if not exists public.interest_points (
 );
 
 alter table public.interest_points enable row level security;
+
+
+create policy "interest_points_public_read"
+on public.interest_points for select
+to anon
+using (user_id = 'local-device');
+
+create policy "interest_points_public_write"
+on public.interest_points for insert
+to anon
+with check (user_id = 'local-device');
+
+create policy "interest_points_public_update"
+on public.interest_points for update
+to anon
+using (user_id = 'local-device')
+with check (user_id = 'local-device');
