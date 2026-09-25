@@ -50,6 +50,15 @@ class SettingsManager(context: Context) {
         const val DEFAULT_BAD_COLOR = "#F44336"
     }
 
+    fun getDarkMapEnabled(): Boolean = prefs.getBoolean("dark_map_enabled", true)
+    fun setDarkMapEnabled(value: Boolean) = prefs.edit().putBoolean("dark_map_enabled", value).apply()
+
+    fun getMapProvider(): String = prefs.getString("map_provider", "osm")
+        ?.takeIf { it in listOf("osm", "openfreemap", "carto") } ?: "osm"
+    fun setMapProvider(value: String) = prefs.edit().putString("map_provider", value).apply()
+    fun getCartoMapKey(): String = prefs.getString("carto_map_key", "") ?: ""
+    fun setCartoMapKey(value: String) = prefs.edit().putString("carto_map_key", value.trim()).apply()
+
     fun getMinKmValue(): Float = prefs.getFloat(KEY_MIN_KM_VALUE, DEFAULT_MIN_KM)
     fun setMinKmValue(value: Float) = prefs.edit().putFloat(KEY_MIN_KM_VALUE, value).apply()
 
