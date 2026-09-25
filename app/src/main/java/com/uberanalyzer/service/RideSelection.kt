@@ -7,7 +7,7 @@ import kotlin.math.abs
 /** Match identity, never the old displayed index, after a fresh screen capture. */
 internal object RideSelection {
     fun isFresh(capturedAt: Long, now: Long, invalidatedAt: Long): Boolean =
-        capturedAt > 0L && capturedAt >= invalidatedAt && now - capturedAt in 0L..1500L
+        capturedAt > 0L && now >= capturedAt && now - capturedAt <= 5000L && invalidatedAt <= capturedAt + 750L
 
     data class Identity(val pickup: String, val dropoff: String, val price: Double)
 
