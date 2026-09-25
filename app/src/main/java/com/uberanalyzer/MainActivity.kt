@@ -445,12 +445,11 @@ class MainActivity : ThemedActivity() {
                 tooltipText = contentDescription
             }
         }
-        // Keep the toggle visible even when the other header actions scroll horizontally.
+        // Keep the hamburger menu in the top action row.
         header.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             addView(titleScrollView, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(cardsToggle, LinearLayout.LayoutParams(dp(48), dp(48)))
             addView(configButton, LinearLayout.LayoutParams(dp(48), dp(48)))
         })
 
@@ -483,7 +482,14 @@ class MainActivity : ThemedActivity() {
             orientation = LinearLayout.HORIZONTAL
         }
         scrollView.addView(routesCardsContainer)
-        header.addView(scrollView)
+        // The expand/collapse control belongs to the cards area, aligned to its right.
+        val cardsAreaRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        cardsAreaRow.addView(scrollView, LinearLayout.LayoutParams(0, -2, 1f))
+        cardsAreaRow.addView(cardsToggle, LinearLayout.LayoutParams(dp(48), dp(48)))
+        header.addView(cardsAreaRow)
 
         root.addView(header)
 
