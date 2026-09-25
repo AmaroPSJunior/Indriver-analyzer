@@ -6,6 +6,9 @@ import kotlin.math.abs
 
 /** Match identity, never the old displayed index, after a fresh screen capture. */
 internal object RideSelection {
+    fun isFresh(capturedAt: Long, now: Long, invalidatedAt: Long): Boolean =
+        capturedAt > 0L && capturedAt >= invalidatedAt && now - capturedAt in 0L..1500L
+
     data class Identity(val pickup: String, val dropoff: String, val price: Double)
 
     fun normalize(address: String): String = Normalizer.normalize(address, Normalizer.Form.NFD)

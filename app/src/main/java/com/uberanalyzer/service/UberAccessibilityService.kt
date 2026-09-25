@@ -20,6 +20,7 @@ class UberAccessibilityService : AccessibilityService() {
     @Volatile private var recentWindow: android.graphics.Rect? = null
     @Volatile private var capturedAt = 0L
     @Volatile private var scanStartedAt = 0L
+    @Volatile private var selectionInvalidatedAt = 0L
     
     private val scanHandler = android.os.Handler(android.os.Looper.getMainLooper())
     @Volatile private var destroyed = false
@@ -43,6 +44,9 @@ class UberAccessibilityService : AccessibilityService() {
         }
         val request = SelectionRequest(RideSelection.Identity(pickup, dropoff, price), android.os.SystemClock.elapsedRealtime(), result)
         pendingSelection = request
+        // Reuse a current, uniquely matched capture before scheduling any new OCR.
+        tryOpenRequestedRide(recentRides, recentWindow)
+        if (pendingSelection !== request) return
         scanHandler.postDelayed({
             if (pendingSelection === request) {
                 pendingSelection = null
@@ -55,21 +59,21 @@ class UberAccessibilityService : AccessibilityService() {
     private fun tryOpenRequestedRide(rides: List<com.uberanalyzer.model.InDriverRide>, bounds: android.graphics.Rect?) {
         val request = pendingSelection ?: return
         val scanTime = capturedAt
-        if (bounds == null || scanTime < request.requestedAt) return
+        if (bounds == null || !RideSelection.isFresh(scanTime, android.os.SystemClock.elapsedRealtime(), selectionInvalidatedAt)) return
         val index = RideSelection.findUnique(request.identity, rides.map {
             RideSelection.Identity(it.pickupAddress, it.dropoffAddress, it.price)
         }) ?: return
         val y = rides[index].screenRowY ?: return
-        scanHandler.post {
+        val open = Runnable {
             val now = android.os.SystemClock.elapsedRealtime()
             if (destroyed || pendingSelection !== request || gesturePending || recentRides !== rides ||
-                now - request.requestedAt >= 8000L || now - scanTime !in 0..4000L ||
-                bounds != findRideWindowBounds(inDriveOnly = true) || y <= bounds.top || y >= bounds.bottom) return@post
+                now - request.requestedAt >= 8000L || !RideSelection.isFresh(scanTime, now, selectionInvalidatedAt) ||
+                bounds != findRideWindowBounds(inDriveOnly = true) || y <= bounds.top || y >= bounds.bottom) return@Runnable
             pendingSelection = null
             gesturePending = true
             val path = android.graphics.Path().apply { moveTo(bounds.exactCenterX(), y.toFloat()) }
             val gesture = android.accessibilityservice.GestureDescription.Builder()
-                .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 80)).build()
+                .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 1)).build()
             fun finish(message: String) {
                 nextScanAfter = android.os.SystemClock.elapsedRealtime() + 2000L
                 gesturePending = false
@@ -91,6 +95,8 @@ class UberAccessibilityService : AccessibilityService() {
                 finish("Não foi possível enviar o toque ao inDrive.")
             }
         }
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) open.run()
+        else scanHandler.post(open)
     }
 
     private val autoHideMonitor = object : Runnable {
@@ -112,6 +118,12 @@ class UberAccessibilityService : AccessibilityService() {
                           pkg.contains("sinet")
 
         val now = System.currentTimeMillis()
+
+        if (isTargetApp && (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
+                event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+                event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED)) {
+            selectionInvalidatedAt = android.os.SystemClock.elapsedRealtime()
+        }
 
         // Debounce scan calls to prevent CPU & memory overload
         if (isTaskPending || (now - lastScanTime < 800)) return
@@ -311,14 +323,14 @@ class UberAccessibilityService : AccessibilityService() {
                     val ride = rides.firstOrNull { it.screenListIndex == position }
                     ride?.earningsPerKm ?: 0.0
                 }
-                val index = AutoHidePolicy.firstBelowMinimum(values, minKm)
+                val index = AutoHidePolicy.firstBelowMinimum(values, minKm, rides.size)
                 if (index != null && capturedWindow != null) {
                     val snapshot = recentRides
                     scanHandler.post {
                         val currentSettings = com.uberanalyzer.settings.SettingsManager(this)
                         val latestMinimum = currentSettings.getMinKmValue().toDouble()
                         if (!destroyed && pendingSelection == null && recentRides === snapshot && currentSettings.getAutoHideEnabled() &&
-                            AutoHidePolicy.firstBelowMinimum(values, latestMinimum) == index) {
+                            AutoHidePolicy.firstBelowMinimum(values, latestMinimum, snapshot.size) == index) {
                             performSwipeHideItem(index, automatic = true)
                         }
                     }
@@ -416,6 +428,7 @@ class UberAccessibilityService : AccessibilityService() {
      */
     @Synchronized
     fun performSwipeHideItem(itemIndex: Int = 0, automatic: Boolean = false): Boolean {
+        if (automatic && recentRides.size <= 1) return false
         if (destroyed || pendingSelection != null || itemIndex < 0 || (automatic && itemIndex > 2) || gesturePending || android.os.SystemClock.elapsedRealtime() < nextScanAfter) return false
         val rideWindow = findRideWindowBounds() ?: return false
         if (rideWindow != recentWindow) return false

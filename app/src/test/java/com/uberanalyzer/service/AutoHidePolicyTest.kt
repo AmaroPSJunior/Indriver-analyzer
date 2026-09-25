@@ -5,6 +5,23 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class AutoHidePolicyTest {
+    @Test fun preservesLastRideUntilAnotherAppears() {
+        assertNull(AutoHidePolicy.firstBelowMinimum(listOf(1.0), 2.0))
+        assertEquals(0, AutoHidePolicy.firstBelowMinimum(listOf(1.0, 1.5), 2.0))
+        assertNull(AutoHidePolicy.firstBelowMinimum(listOf(1.5), 2.0))
+    }
+
+    @Test fun paddedPositionsDoNotCountAsVisibleRides() {
+        assertNull(AutoHidePolicy.firstBelowMinimum(listOf(1.0, 0.0, 0.0), 2.0, 1))
+        assertEquals(0, AutoHidePolicy.firstBelowMinimum(listOf(1.0, 0.0, 1.5), 2.0, 2))
+    }
+
+    @Test fun consecutiveRemovalsNeverEmptyQueue() {
+        val queue = mutableListOf(1.0, 1.2, 1.5)
+        repeat(5) { AutoHidePolicy.firstBelowMinimum(queue, 2.0)?.let { queue.removeAt(it) } }
+        assertEquals(listOf(1.5), queue)
+    }
+
     @Test fun checksSecondAndThirdEvenWhenFirstMeetsMinimum() {
         assertEquals(1, AutoHidePolicy.firstBelowMinimum(listOf(3.0, 1.0, 1.5), 2.0))
         assertEquals(2, AutoHidePolicy.firstBelowMinimum(listOf(3.0, 2.0, 1.5), 2.0))
