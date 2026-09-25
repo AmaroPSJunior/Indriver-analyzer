@@ -1016,6 +1016,7 @@ class MainActivity : ThemedActivity() {
         container.addView(name); container.addView(address); container.addView(icon)
         val visibility = androidx.appcompat.widget.SwitchCompat(this).apply { text = "Visível no mapa"; isChecked = true }
         container.addView(visibility)
+        var dialog: androidx.appcompat.app.AlertDialog? = null
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         for (i in 0 until points.length()) {
             val p = points.optJSONObject(i) ?: continue
@@ -1027,7 +1028,6 @@ class MainActivity : ThemedActivity() {
             row.addView(label); row.addView(toggle); row.addView(remove); list.addView(row)
         }
         container.addView(list)
-        var dialog: androidx.appcompat.app.AlertDialog? = null
         dialog = androidx.appcompat.app.AlertDialog.Builder(this).setView(container).setNegativeButton("Fechar", null).setPositiveButton("Adicionar", null).create()
         dialog.setOnShowListener {
             dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
