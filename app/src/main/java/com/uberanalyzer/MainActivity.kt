@@ -362,6 +362,10 @@ class MainActivity : ThemedActivity() {
             layoutParams = LinearLayout.LayoutParams(-1, -1)
         }
 
+        val cardPreferences = getSharedPreferences("map_layout", MODE_PRIVATE)
+        var cardsMinimized = cardPreferences.getBoolean("cards_minimized", false)
+        lateinit var cardsScroll: HorizontalScrollView
+
         // --- Top Header Panel ---
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -440,7 +444,27 @@ class MainActivity : ThemedActivity() {
         titleRow.addView(autoHideSwitch)
         titleRow.addView(configButton)
         titleScrollView.addView(titleRow)
-        header.addView(titleScrollView)
+        val cardsToggle = Button(this).apply {
+            text = if (cardsMinimized) "🔽 Mostrar cards" else "🔼 Minimizar cards"
+            contentDescription = text
+            textSize = 11f
+            setTextColor(getColor(R.color.app_text))
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            setOnClickListener {
+                cardsMinimized = !cardsMinimized
+                cardPreferences.edit().putBoolean("cards_minimized", cardsMinimized).apply()
+                cardsScroll.visibility = if (cardsMinimized) View.GONE else View.VISIBLE
+                text = if (cardsMinimized) "🔽 Mostrar cards" else "🔼 Minimizar cards"
+                contentDescription = text
+            }
+        }
+        // Keep the toggle visible even when the other header actions scroll horizontally.
+        header.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(titleScrollView, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(cardsToggle, LinearLayout.LayoutParams(-2, -2))
+        })
 
         accStatusView = TextView(this).apply {
             textSize = 11f
@@ -468,6 +492,8 @@ class MainActivity : ThemedActivity() {
         routesCardsContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
+        cardsScroll = scrollView
+        cardsScroll.visibility = if (cardsMinimized) View.GONE else View.VISIBLE
         scrollView.addView(routesCardsContainer)
         header.addView(scrollView)
 
@@ -477,6 +503,11 @@ class MainActivity : ThemedActivity() {
         webView = WebView(this).apply {
             layoutParams = LinearLayout.LayoutParams(-1, 0, 1f)
             setBackgroundColor(getColor(R.color.app_background))
+        }
+        webView.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            if (isMapLoaded && (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop)) {
+                webView.evaluateJavascript("window.dispatchEvent(new Event('resize'));", null)
+            }
         }
         root.addView(webView)
 
