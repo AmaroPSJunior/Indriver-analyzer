@@ -18,7 +18,7 @@ object RideParser {
 
     // Forbidden UI buttons, badges, status labels, or system text
     private val NOISE_KEYWORDS = setOf(
-        "reclamar", "preço justo", "preco justo", "bônus", "bonus", "+1 bônus", "+2 bônus", "+3 bônus",
+        "reclamar", "preço justo", "preco justo", "agora", "mesmo", "agora mesmo", "bônus", "bonus", "+1 bônus", "+2 bônus", "+3 bônus",
         "escolher no mapa", "definir no mapa", "ar-condicionado", "ar condicionado", "bagagem", "pet",
         "viagem", "corrida", "oferecer", "aceitar", "recusar", "sugerir", "negociar", "sugerir seu preço",
         "dinheiro", "pix", "cartão", "cartao", "troco", "desconto", "oferta", "promocao", "promoção",
@@ -87,47 +87,19 @@ object RideParser {
                      lower.contains("aplicativos") || lower.contains("viewgroup") ||
                      lower.contains("cardview") || lower.contains("item de lista"))
 
-            val isNoise = NOISE_KEYWORDS.any { noise -> lower == noise || lower.contains(noise) }
+            val isNoise = NOISE_KEYWORDS.any { noise -> lower == noise }
 
             text.isNotBlank() && !isRightSideOverlay && !isNoise
         }
 
         if (validLines.isEmpty()) return emptyList()
 
-        // Cluster lines by spatial bounding box / card boundaries
-        val cardClusters = mutableListOf<MutableList<com.uberanalyzer.ocr.MlKitScreenOcrEngine.OcrLine>>()
-        var currentCluster = mutableListOf<com.uberanalyzer.ocr.MlKitScreenOcrEngine.OcrLine>()
-
-        for (line in validLines) {
-            val text = line.text.trim()
-
-            val isPriceOrRate = text.contains("R$", ignoreCase = true) || text.contains("/km", ignoreCase = true)
-
-            val clusterHasPrice = currentCluster.any { it.text.contains("R$", ignoreCase = true) }
-            val clusterHasAddress = currentCluster.any { isValidAddressLine(it.text) }
-
-            val prevBox = currentCluster.lastOrNull()?.boundingBox
-            val currBox = line.boundingBox
-            val verticalGap = if (prevBox != null && currBox != null) (currBox.top - prevBox.bottom) else 0
-
-            val isNameCandidate = extractPassengerNameClean(listOf(text)) != null
-
-            // Split into new card cluster if this line belongs to a new ride card
-            val shouldSplit = (clusterHasPrice && clusterHasAddress && (isPriceOrRate || isNameCandidate)) || 
-                              (verticalGap > 100 && currentCluster.isNotEmpty())
-
-            if (shouldSplit) {
-                cardClusters.add(currentCluster)
-                currentCluster = mutableListOf()
-            }
-
-            currentCluster.add(line)
+        val positioned = validLines.filter { it.boundingBox != null }
+        val geometry = positioned.map { line ->
+            val box = line.boundingBox!!
+            RideCardLayout.Line(line.text, box.left, box.top, box.right, box.bottom)
         }
-
-        if (currentCluster.isNotEmpty()) {
-            cardClusters.add(currentCluster)
-        }
-
+        val cardClusters = RideCardLayout.group(geometry).map { indices -> indices.map { positioned[it] } }
         val rides = mutableListOf<InDriverRide>()
         var index = 1
 
@@ -147,28 +119,6 @@ object RideParser {
             val cardBottom = if (bottoms.isNotEmpty()) bottoms.maxOrNull()!! else (cardTop + 200)
 
             val cardBox = android.graphics.Rect(cardLeft, cardTop, cardRight, cardBottom)
-
-            // Reject clusters containing launcher noise.
-
-            val lowerBlock = fullBlockText.lowercase(Locale.getDefault())
-            if (lowerBlock.contains("waze") || 
-                lowerBlock.contains("spotify") || 
-                lowerBlock.contains("sinal") || 
-                lowerBlock.contains("wi-fi") || 
-                lowerBlock.contains("wifi") || 
-                lowerBlock.contains("bluetooth") || 
-                lowerBlock.contains("bateria") || 
-                lowerBlock.contains("sáb") || 
-                lowerBlock.contains("sab.") || 
-                lowerBlock.contains("dom.") || 
-                lowerBlock.contains("de ago") || 
-                lowerBlock.contains("de set") || 
-                lowerBlock.contains("notifica") || 
-                lowerBlock.contains("painéis") || 
-                lowerBlock.contains("paineis") || 
-                lowerBlock.contains("edge")) {
-                continue
-            }
 
             // RED REGION: Dynamic Crop of Passenger Avatar Photo
             val nameLine = cluster.firstOrNull { extractPassengerNameClean(listOf(it.text)) != null }
@@ -224,12 +174,16 @@ object RideParser {
             val passengerName = extractPassengerNameFromCluster(cluster) ?: "Passageiro inDrive"
 
             // ORANGE REGION: Addresses (Origem e Destino)
-            val addressLines = clusterTexts.filter { line ->
+            val priceBox = cluster.firstOrNull { extractRidePrices(it.text).isNotEmpty() }?.boundingBox
+            val addressLines = cluster.filter { line ->
+                val box = line.boundingBox
+                priceBox == null || box == null || box.left >= priceBox.left - priceBox.height() / 2
+            }.map { it.text.trim() }.filter { line ->
                 val lower = line.lowercase(Locale.getDefault())
                 line != passengerName &&
                 !lower.contains("r$") &&
                 !lower.contains("/km") &&
-                NOISE_KEYWORDS.none { noise -> lower == noise || lower.contains(noise) }
+                NOISE_KEYWORDS.none { noise -> lower == noise }
             }
 
             val (pickupAddr, dropoffAddr) = extractAddressesStrict(addressLines, fullBlockText)
@@ -292,26 +246,6 @@ object RideParser {
             val trimmed = block.trim()
             if (trimmed.length < 8) continue
 
-            val lowerBlock = trimmed.lowercase(Locale.getDefault())
-            if (lowerBlock.contains("spotify") || 
-                lowerBlock.contains("waze") || 
-                lowerBlock.contains("sinal") || 
-                lowerBlock.contains("wi-fi") || 
-                lowerBlock.contains("wifi") || 
-                lowerBlock.contains("bluetooth") || 
-                lowerBlock.contains("bateria") || 
-                lowerBlock.contains("sáb") || 
-                lowerBlock.contains("sab.") || 
-                lowerBlock.contains("dom.") || 
-                lowerBlock.contains("de ago") || 
-                lowerBlock.contains("de set") || 
-                lowerBlock.contains("notifica") || 
-                lowerBlock.contains("painéis") || 
-                lowerBlock.contains("paineis") || 
-                lowerBlock.contains("edge")) {
-                continue
-            }
-
             // Main ride price (ignoring rate badge R$ X/km)
             val price = extractRidePrices(trimmed).firstOrNull() ?: continue
 
@@ -342,8 +276,8 @@ object RideParser {
             val rawLines = trimmed.split("|", "\n", "•").map { it.trim() }
                 .filter { line ->
                     line.isNotBlank() && 
-                    !line.contains("km", true) && 
-                    !line.contains("min", true)
+                    !distanceRegex.matches(line) &&
+                    !timeRegex.matches(line)
                 }
 
             // 1. Extract Passenger Name
@@ -356,7 +290,7 @@ object RideParser {
             val addressLines = rawLines.filter { line ->
                 val lower = line.lowercase(Locale.getDefault())
                 line != passengerName &&
-                NOISE_KEYWORDS.none { noise -> lower == noise || lower.contains(noise) }
+                NOISE_KEYWORDS.none { noise -> lower == noise }
             }
 
             // 4. Extract Origin and Destination addresses
@@ -530,121 +464,12 @@ object RideParser {
     /**
      * Extract clean Pickup and Dropoff addresses with strict validation
      */
-    private fun extractAddressesStrict(lines: List<String>, fullBlockText: String): Pair<String, String> {
-        val validCandidates = mutableListOf<String>()
+    private fun extractAddressesStrict(lines: List<String>, fullBlockText: String): Pair<String, String> =
+        RideAddressParser.extract(lines)
 
-        for (line in lines) {
-            val lower = line.lowercase(Locale.getDefault())
+    fun isRealAddress(address: String?): Boolean = RideAddressParser.isAddress(address)
 
-            if (NOISE_KEYWORDS.any { noise -> lower == noise || lower.contains(noise) }) continue
-
-            if (isValidAddressLine(line)) {
-                val cleaned = cleanAddressString(line)
-                if (cleaned.length >= 3 && !validCandidates.contains(cleaned)) {
-                    validCandidates.add(cleaned)
-                }
-            }
-        }
-
-        // Prioritize candidates that start with an explicit logradouro prefix or have address separators
-        validCandidates.sortByDescending { addr ->
-            val lower = addr.lowercase(Locale.getDefault())
-            var score = 0
-            if (LOGRADOURO_PREFIXES.any { lower.startsWith(it) }) score += 2
-            if (lower.contains(",") || lower.contains("-")) score += 1
-            score
-        }
-
-        val pickup = if (validCandidates.isNotEmpty()) validCandidates[0] else ""
-        val dropoff = if (validCandidates.size >= 2) validCandidates[1] else ""
-
-        return Pair(pickup, dropoff)
-    }
-
-    fun isRealAddress(address: String?): Boolean {
-        if (address.isNullOrBlank()) return false
-        val rawTrim = address.trim()
-        if (rawTrim.length < 3) return false
-        val lower = rawTrim.lowercase(Locale.getDefault())
-
-        // Non-address placeholder or UI text
-        if (lower.contains("definir") || lower.contains("escolher no mapa") || lower.contains("destino no mapa") ||
-            lower.contains("no mapa") || lower.contains("informado no app") || lower.contains("destino informado") ||
-            lower.contains("não especificado") || lower.contains("nao especificado") || lower.contains("não capturado") ||
-            lower.contains("nao capturado") || lower.contains("endereço de") || lower.contains("nao identificado") ||
-            lower.contains("não identificado") || lower.contains("sem destino") || lower.contains("a definir")) return false
-
-        // Absolute disqualifiers: prices, rates, ratings, payment methods, durations, distances
-        if (address.contains("★") || address.contains("R$") || address.contains("Pix", true) || lower.contains("/km")) return false
-
-        // Disqualify system UI, media, notifications, dates, clock, status bar, phone indicators, action buttons
-        if (lower.contains("spotify") || lower.contains("waze") || lower.contains("sinal") ||
-            lower.contains("wi-fi") || lower.contains("wifi") || lower.contains("bluetooth") ||
-            lower.contains("bateria") || lower.contains("notifica") || lower.contains("cheio") ||
-            lower.contains("reloj") || lower.contains("relógio") || lower.contains("modo avião") ||
-            lower.contains("sáb") || lower.contains("dom") || lower.contains("seg") ||
-            lower.contains("ter.") || lower.contains("qua.") || lower.contains("qui.") || lower.contains("sex.") ||
-            lower.contains("sábado") || lower.contains("domingo") || lower.contains("segunda") ||
-            lower.contains("terça") || lower.contains("quarta") || lower.contains("quinta") || lower.contains("sexta") ||
-            lower.contains("de ago") || lower.contains("de set") || lower.contains("de out") ||
-            lower.contains("de nov") || lower.contains("de dez") || lower.contains("de jan") ||
-            lower.contains("de fev") || lower.contains("de mar") || lower.contains("de abr") || lower.contains("de mai") ||
-            lower.contains("de jun") || lower.contains("de jul") ||
-            lower.contains("sua oferta") || lower.contains("oferecer") || lower.contains("aceitar") || lower.contains("recusar") ||
-            lower.contains("reclamar") || lower.contains("bônus") || lower.contains("sugerir") || lower.contains("solicitação")) return false
-
-        if (NOISE_KEYWORDS.any { noise -> lower == noise || lower.contains(noise) }) return false
-
-        // Check for street prefixes (Rua, Av, Praça, Alameda, Estrada, Rodovia, etc.)
-        val startsWithLogradouro = LOGRADOURO_PREFIXES.any { prefix ->
-            lower.startsWith(prefix) || lower.contains(" $prefix ") || lower.contains(" $prefix.") || lower.contains(" $prefix,")
-        }
-
-        // Check for known street/neighborhood/landmark keywords (Bairro, Vila, Jardim, Centro, Shopping, Hospital, Aeroporto, etc.)
-        val hasStreetOrLandmark = STREET_KEYWORDS.any { street -> lower.contains(street) }
-
-        // Address format with punctuation and house number (e.g., Augusta, 100 - Consolação) that has letters
-        val hasNumberOrSeparator = (lower.contains(",") || lower.contains("-") || lower.contains("nº") || lower.contains("n°")) &&
-                lower.any { it.isLetter() } &&
-                Regex("\\b[0-9]{1,5}\\b").containsMatchIn(lower)
-
-        if (!startsWithLogradouro && !hasStreetOrLandmark && !hasNumberOrSeparator) {
-            return false
-        }
-
-        val letterCount = lower.count { it.isLetter() }
-        if (letterCount < 2) return false
-
-        return true
-    }
-
-    private fun isValidAddressLine(line: String): Boolean {
-        return isRealAddress(line)
-    }
-
-    private fun cleanAddressString(addr: String): String {
-        var clean = addr
-        clean = clean.replace(Regex("#[0-9A-Za-z\\-!#]+"), "")
-        clean = clean.replace(Regex("R\\$\\s*[0-9]+(?:[,.][0-9]+)?(?:/km)?"), "")
-        clean = clean.replace(Regex("R\\$\\s*[0-9]+(?:[,.][0-9]+)?\\s*/\\s*km", RegexOption.IGNORE_CASE), "")
-        clean = clean.replace(Regex("~?\\s*[0-9]+(?:[,.][0-9]+)?\\s*(?:m|km)\\b", RegexOption.IGNORE_CASE), "")
-        clean = clean.replace(Regex("[0-9]+\\s*(?:seg|min|minutos)\\b", RegexOption.IGNORE_CASE), "")
-        clean = clean.replace(Regex("★\\s*[0-9]+[.,][0-9]+|[0-9]+[.,][0-9]+\\s*★?"), "")
-        clean = clean.replace(Regex("\\([0-9]+\\)"), "")
-
-        NOISE_KEYWORDS.forEach { noise ->
-            clean = clean.replace(Regex("(?i)\\b${Regex.escape(noise)}\\b"), "")
-        }
-
-        clean = clean.replace(Regex("\\s+"), " ").trim()
-        clean = clean.removePrefix(",").removePrefix("-").removePrefix("•").removePrefix(".").removeSuffix(",").removeSuffix("-").removeSuffix("•").removeSuffix(".").trim()
-
-        if (clean.length < 3 || !clean.any { it.isLetter() }) {
-            return ""
-        }
-        return clean
-    }
-
+    private fun isValidAddressLine(line: String): Boolean = isRealAddress(line)
     private fun parseSingleInDriver(text: String): InDriverRide? {
         val price = extractRidePrices(text).firstOrNull() ?: return null
 
@@ -670,7 +495,7 @@ object RideParser {
         val addressLines = rawLines.filter { line ->
             val lower = line.lowercase(Locale.getDefault())
             line != passengerName &&
-            NOISE_KEYWORDS.none { noise -> lower == noise || lower.contains(noise) }
+            NOISE_KEYWORDS.none { noise -> lower == noise }
         }
 
         val (pickupAddr, dropoffAddr) = extractAddressesStrict(addressLines, text)

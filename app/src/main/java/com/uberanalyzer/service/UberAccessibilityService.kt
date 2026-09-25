@@ -11,6 +11,7 @@ import java.util.concurrent.Executors
 
 class UberAccessibilityService : AccessibilityService() {
     
+    private val destinationMemory = com.uberanalyzer.parser.RideDestinationMemory()
     private val executor = Executors.newSingleThreadExecutor()
     @Volatile
     private var isTaskPending = false
@@ -155,7 +156,7 @@ class UberAccessibilityService : AccessibilityService() {
 
     private fun performFallbackAccessibilityScan() {
         try {
-            val sb = StringBuilder()
+            val capturedLines = mutableListOf<com.uberanalyzer.ocr.MlKitScreenOcrEngine.OcrLine>()
             
             // In split-screen / multi-window mode, iterate through all interactive windows to find inDrive
             val activeWindows = try { windows } catch (e: Exception) { null }
@@ -167,19 +168,19 @@ class UberAccessibilityService : AccessibilityService() {
                         try { root.recycle() } catch (_: Exception) {}
                         continue
                     }
-                    collectTextFast(root, sb)
+                    collectPositionedText(root, capturedLines)
                     try { root.recycle() } catch (_: Exception) {}
                 }
             }
 
             // Fallback to active window if windows list was empty
-            if (sb.isBlank()) {
+            if (capturedLines.isEmpty()) {
                 val rootNode = rootInActiveWindow
                 if (rootNode != null) {
                     val pkg = rootNode.packageName?.toString()?.lowercase(java.util.Locale.getDefault()) ?: ""
                     if (isRidePackage(pkg)) {
                         try {
-                            collectTextFast(rootNode, sb)
+                            collectPositionedText(rootNode, capturedLines)
                         } finally {
                             try { rootNode.recycle() } catch (_: Exception) {}
                         }
@@ -206,7 +207,7 @@ class UberAccessibilityService : AccessibilityService() {
     }
 
     private fun processInDriverRides(rides: List<com.uberanalyzer.model.InDriverRide>, isOcrSource: Boolean): Boolean {
-        if (rides.isEmpty()) return false
+        if (rides.isEmpty()) { destinationMemory.update(emptyList(), System.currentTimeMillis()); return false }
 
         val now = System.currentTimeMillis()
         if (now - lastProcessedTime < 600) return false // Cooldown between overlay updates
@@ -216,7 +217,7 @@ class UberAccessibilityService : AccessibilityService() {
         val autoHide = settings.getAutoHideEnabled()
         val maxRoutes = settings.getMaxRoutes()
 
-        val capturedRides = rides.take(maxRoutes)
+        val capturedRides = destinationMemory.update(rides, now).take(maxRoutes)
         if (capturedRides.isNotEmpty()) {
             lastProcessedTime = now
 
@@ -285,38 +286,25 @@ class UberAccessibilityService : AccessibilityService() {
         return false
     }
 
-    private fun collectTextFast(node: AccessibilityNodeInfo?, sb: StringBuilder) {
-        if (node == null) return
-        val pkg = node.packageName?.toString()?.lowercase(java.util.Locale.getDefault()) ?: ""
-        if (pkg == packageName) return // Ignora nós provenientes do próprio app UberAnalyzer / Janela de Overlay
-
-        if (pkg.contains("systemui") || pkg.contains("spotify") || pkg.contains("waze") || 
-            pkg.contains("launcher") || pkg.contains("media") || pkg.contains("music") || 
-            pkg.contains("player") || pkg.contains("googlequicksearchbox")) {
-            return
-        }
-
-        node.text?.let { if (it.isNotBlank()) sb.append(it).append(" | ") }
-        node.contentDescription?.let { desc ->
-            if (desc.isNotBlank()) {
-                val str = desc.toString()
-                if (str.startsWith("http://") || str.startsWith("https://") || str.startsWith("data:image/")) {
-                    sb.append(str).append(" | ")
-                } else {
-                    sb.append(str).append(" | ")
-                }
+    private fun collectPositionedText(
+        node: AccessibilityNodeInfo,
+        lines: MutableList<com.uberanalyzer.ocr.MlKitScreenOcrEngine.OcrLine>
+    ) {
+        if (!node.isVisibleToUser || node.packageName?.toString() == packageName) return
+        if (node.childCount == 0) {
+            val text = node.text?.toString()?.takeIf { it.isNotBlank() }
+                ?: node.contentDescription?.toString()?.takeIf { it.isNotBlank() }
+            if (text != null) {
+                val box = android.graphics.Rect()
+                node.getBoundsInScreen(box)
+                if (!box.isEmpty) lines.add(com.uberanalyzer.ocr.MlKitScreenOcrEngine.OcrLine(text, box))
             }
         }
-        
         for (i in 0 until node.childCount) {
-            val child = node.getChild(i)
-            if (child != null) {
-                collectTextFast(child, sb)
-                try { child.recycle() } catch (e: Exception) {}
-            }
+            val child = node.getChild(i) ?: continue
+            try { collectPositionedText(child, lines) } finally { child.recycle() }
         }
     }
-
     private fun sendDebugLog(text: String) {
         val intent = Intent("DEBUG_LOG")
         intent.putExtra("log_text", text)
@@ -442,7 +430,6 @@ class UberAccessibilityService : AccessibilityService() {
             private set
         private var lastProcessedTime = 0L
         private var lastLogTime = 0L
-        private var lastFullText = ""
 
         fun triggerScan(context: android.content.Context) {
             val activeInstance = instance
