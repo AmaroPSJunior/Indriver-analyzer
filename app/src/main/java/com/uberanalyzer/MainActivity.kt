@@ -513,6 +513,30 @@ class MainActivity : ThemedActivity() {
             }
 
             @android.webkit.JavascriptInterface
+            fun openRide(payload: String) {
+                runOnUiThread {
+                    if (isDestroyed || isFinishing) return@runOnUiThread
+                    try {
+                        val data = JSONObject(payload)
+                        val pickup = data.getString("pickup")
+                        val dropoff = data.getString("dropoff")
+                        val price = data.getDouble("price")
+                        if (!currentActiveRoutes.any { it.pickup == pickup && it.dropoff == dropoff && it.price == price }) return@runOnUiThread
+                        val service = com.uberanalyzer.service.UberAccessibilityService.instance
+                        if (service == null) {
+                            android.widget.Toast.makeText(this@MainActivity, "Ative a acessibilidade para selecionar a corrida.", android.widget.Toast.LENGTH_LONG).show()
+                        } else {
+                            service.requestOpenRide(pickup, dropoff, price) { message ->
+                                android.widget.Toast.makeText(applicationContext, message, android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    } catch (_: Exception) {
+                        android.widget.Toast.makeText(applicationContext, "Atualize o mapa e tente novamente.", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+
+            @android.webkit.JavascriptInterface
             fun hideTopTrip() {
                 runOnUiThread {
                     hideTopRideAndCascade(0)
@@ -553,36 +577,10 @@ class MainActivity : ThemedActivity() {
                         border: 2px solid #FFF; box-shadow: 0 3px 10px rgba(0,0,0,0.8);
                         font-weight: 900; font-size: 13px; color: #0F172A;
                     }
-                    .avatar-badge-container {
-                        position: absolute; bottom: 0; width: 32px; display: flex; flex-direction: column; align-items: center; pointer-events: none;
+                    .ride-marker-container {
+                        position: absolute; bottom: 0; width: 32px; display: flex; flex-direction: column; align-items: center; pointer-events: auto;
                     }
-                    .avatar-circle {
-                        width: 38px; height: 38px; border-radius: 50%;
-                        display: flex; align-items: center; justify-content: center;
-                        border: 3px solid #FFF;
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.85);
-                        background: #1E293B;
-                        overflow: visible;
-                        position: relative;
-                    }
-                    .avatar-circle img {
-                        width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
-                    }
-                    .avatar-default {
-                        font-size: 20px; line-height: 1;
-                    }
-                    .avatar-num-badge {
-                        position: absolute;
-                        top: -6px; right: -6px;
-                        background: #0F172A;
-                        color: #FFF;
-                        font-size: 11px;
-                        font-weight: 900;
-                        padding: 1px 5px;
-                        border-radius: 8px;
-                        border: 1.5px solid #38BDF8;
-                    }
-                    .passenger-name-pill {
+                    .ride-price-pill {
                         margin-top: 3px;
                         background: #0F172A;
                         color: #F8FAFC;
@@ -615,7 +613,7 @@ class MainActivity : ThemedActivity() {
                 ${if ((resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) != android.content.res.Configuration.UI_MODE_NIGHT_YES) "@media all" else "@media not all"} {
                         body, html, #map { background: #F8FAFC; }
                         .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #FFFFFF; color: #0F172A; }
-                        .passenger-name-pill, .avatar-num-badge { background: #FFFFFF; color: #0F172A; }
+                        .ride-price-pill { background: #FFFFFF; color: #0F172A; }
                     }
                 </style>
             </head>
@@ -707,24 +705,21 @@ class MainActivity : ThemedActivity() {
                                 var r = routes[idx];
                                 var color = ROUTE_COLORS[idx % ROUTE_COLORS.length];
 
-                                var photoHtml = '';
-                                if (r.showPhoto !== false && r.passengerPhoto && r.passengerPhoto.length > 5) {
-                                    photoHtml = '<div class="avatar-circle" style="border-color: ' + color + ';">' +
-                                        '<img src="' + escapeHtml(r.passengerPhoto) + '" onerror="this.style.display=&#39;none&#39;;" />' +
-                                    '</div>';
-                                }
-
-                                var nameHtml = '';
-                                if (r.showName !== false) {
-                                    var passName = r.passenger ? r.passenger : 'Passageiro inDrive';
-                                    nameHtml = '<div class="passenger-name-pill" style="border-color: ' + color + ';">👤 ' + escapeHtml(passName) + '</div>';
+                                var fare = Number(r.price).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+                                var nameHtml = '<div class="ride-price-pill" style="border-color: ' + color + ';">' + escapeHtml(fare) + '</div>';
+                                function selectOriginalRide() {
+                                    if (generation !== mapGeneration) return;
+                                    window.focusRouteByIdx(idx);
+                                    if (window.AndroidBridge && AndroidBridge.openRide) {
+                                        AndroidBridge.openRide(JSON.stringify({pickup: r.pickup, dropoff: r.dropoff, price: r.price}));
+                                    }
                                 }
 
                                 var pickupArrow = '&#8593;';
                                 var dropoffArrow = '&#8595;';
 
-                                var pickupHtml = '<div class="avatar-badge-container">' + 
-                                    photoHtml + nameHtml +
+                                var pickupHtml = '<div class="ride-marker-container">' + 
+                                    nameHtml +
                                     '<div class="origin-circle" style="background-color: #16A34A; border: 2px solid ' + color + ';">' + pickupArrow + '</div>' +
                                 '</div>';
 
@@ -748,14 +743,14 @@ class MainActivity : ThemedActivity() {
 
                                 if (hasPickup) {
                                     var pMarker = L.marker([r.pLat, r.pLng], {icon: pickupIcon}).addTo(map)
-                                        .bindPopup('<b>👤 ' + (r.passenger || 'Passageiro') + ' (🟢 EMBARQUE)</b><br><b>R$ ' + r.price.toFixed(2) + ' (' + r.distanceKm + ' km)</b><br>📍 ' + r.pickup);
+                                        .bindPopup('<b>🟢 EMBARQUE • ' + escapeHtml(fare) + '</b><br>📍 ' + escapeHtml(r.pickup)).on('click', selectOriginalRide);
                                     routeLayers.push(pMarker);
                                     groupLayers.push(pMarker);
                                 }
 
                                 if (hasDropoff) {
                                     var dMarker = L.marker([r.dLat, r.dLng], {icon: dropoffIcon}).addTo(map)
-                                        .bindPopup('<b>🟠 DESTINO • 👤 ' + (r.passenger || 'Passageiro') + '</b><br><b>R$ ' + r.price.toFixed(2) + ' (' + r.distanceKm + ' km)</b><br>🏁 ' + r.dropoff);
+                                        .bindPopup('<b>🔴 DESEMBARQUE • ' + escapeHtml(fare) + '</b><br>🏁 ' + escapeHtml(r.dropoff)).on('click', selectOriginalRide);
                                     routeLayers.push(dMarker);
                                     groupLayers.push(dMarker);
                                 }
@@ -780,7 +775,7 @@ class MainActivity : ThemedActivity() {
                                                 smoothFactor: 1
                                             }).addTo(map);
 
-                                            line.bindTooltip('👤 ' + (r.passenger || 'Passageiro') + ' • R$ ' + r.price.toFixed(2), {permanent: false, sticky: true});
+                                            line.bindTooltip(escapeHtml(fare), {permanent: false, sticky: true}).on('click', selectOriginalRide);
                                             routeLayers.push(line);
                                             groupLayers.push(line);
                                             routeLinesMap[idx] = line;
@@ -794,7 +789,7 @@ class MainActivity : ThemedActivity() {
                                                 opacity: 0.95,
                                                 smoothFactor: 1
                                             }).addTo(map);
-                                            line.bindTooltip('👤 ' + (r.passenger || 'Passageiro') + ' • R$ ' + r.price.toFixed(2), {permanent: false, sticky: true});
+                                            line.bindTooltip(escapeHtml(fare), {permanent: false, sticky: true}).on('click', selectOriginalRide);
                                             routeLayers.push(line);
                                             groupLayers.push(line);
                                             routeLinesMap[idx] = line;
@@ -1007,18 +1002,18 @@ class MainActivity : ThemedActivity() {
                 val (dLat, dLng) = resolveCoordinates(route.dropoff, false, route.distanceKm, index)
 
                 val jsObj = JSONObject().apply {
-                    put("pickup", route.pickup.replace("'", "\\'").replace("\"", ""))
-                    put("dropoff", route.dropoff.replace("'", "\\'").replace("\"", ""))
+                    put("pickup", route.pickup)
+                    put("dropoff", route.dropoff)
                     put("price", route.price)
                     put("distanceKm", route.distanceKm)
                     put("pLat", pLat)
                     put("pLng", pLng)
                     put("dLat", dLat)
                     put("dLng", dLng)
-                    put("passenger", route.passenger)
-                    put("passengerPhoto", route.passengerPhoto)
-                    put("showPhoto", settingsManager.getShowPassengerPhoto())
-                    put("showName", settingsManager.getShowPassengerName())
+
+
+
+
                 }
                 jsRoutesArray.put(jsObj)
             }
@@ -1215,10 +1210,10 @@ class MainActivity : ThemedActivity() {
             routesCardsContainer.addView(card)
         }
 
-        val jsonStr = jsRoutesArray.toString().replace("'", "\\'")
-        val jsCall = "javascript:updateMultiRouteMap('$jsonStr');"
+        val jsonStr = JSONObject.quote(jsRoutesArray.toString())
+        val jsCall = "javascript:updateMultiRouteMap($jsonStr);"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            webView.evaluateJavascript("updateMultiRouteMap('$jsonStr')", null)
+            webView.evaluateJavascript("updateMultiRouteMap($jsonStr)", null)
         } else {
             webView.loadUrl(jsCall)
         }
