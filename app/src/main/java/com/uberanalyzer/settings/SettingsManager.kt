@@ -91,6 +91,8 @@ class SettingsManager(context: Context) {
     fun getShowRouteMetrics(): Boolean = prefs.getBoolean(KEY_SHOW_ROUTE_METRICS, true)
     fun setShowRouteMetrics(value: Boolean) = prefs.edit().putBoolean(KEY_SHOW_ROUTE_METRICS, value).apply()
 
+    fun syncMapInterestPoints() = Unit
+
     fun getMapInterestPoints(): String = interestPointDatabase.read()
     fun setMapInterestPoints(value: String) = interestPointDatabase.write(value)
 
