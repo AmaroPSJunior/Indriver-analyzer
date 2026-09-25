@@ -50,6 +50,9 @@ class SettingsManager(context: Context) {
         const val DEFAULT_BAD_COLOR = "#F44336"
     }
 
+    fun getThemeMode(): Int = prefs.getInt("theme_mode", -1).takeIf { it in listOf(-1, 1, 2) } ?: -1
+    fun setThemeMode(mode: Int) = prefs.edit().putInt("theme_mode", mode.takeIf { it in listOf(-1, 1, 2) } ?: -1).apply()
+
     fun getDarkMapEnabled(): Boolean = prefs.getBoolean("dark_map_enabled", true)
     fun setDarkMapEnabled(value: Boolean) = prefs.edit().putBoolean("dark_map_enabled", value).apply()
 

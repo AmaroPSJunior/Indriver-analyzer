@@ -59,6 +59,9 @@ jobs:
           fi
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
 
+      - name: Test map initialization and provider switching
+        run: node scripts/test-map.cjs
+
       - name: Build with Gradle
         run: gradle testDebugUnitTest assembleDebug -PbuildNumber="$BUILD_NUMBER"
 

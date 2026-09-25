@@ -40,6 +40,8 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import android.widget.RadioGroup
+import android.widget.RadioButton
 import android.accessibilityservice.AccessibilityService
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -54,7 +56,7 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : ThemedActivity() {
 
     private lateinit var accStatusView: TextView
     private lateinit var accButton: Button
@@ -68,22 +70,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var settingsManager: com.uberanalyzer.settings.SettingsManager
     private lateinit var autoHideSwitch: androidx.appcompat.widget.SwitchCompat
 
-    private val autoHideHandler = Handler(Looper.getMainLooper())
-    private val autoHideRunnable = object : Runnable {
-        override fun run() {
-            if (::settingsManager.isInitialized && settingsManager.getAutoHideEnabled()) {
-                if (com.uberanalyzer.service.UberAccessibilityService.instance != null) {
-                    com.uberanalyzer.service.UberAccessibilityService.instance?.requestImmediateInDriverScan()
-                }
-                evaluateAndAutoHideTrips()
-                autoHideHandler.postDelayed(this, 1800)
-            }
-        }
-    }
-
     private var userLat: Double? = null
     private var userLng: Double? = null
     private var locationManager: LocationManager? = null
+    private var currentLocationListener: LocationListener? = null
     private val LOCATION_PERMISSION_REQUEST_CODE = 1001
 
     companion object {
@@ -335,7 +325,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        autoHideHandler.removeCallbacksAndMessages(null)
+        if (::webView.isInitialized) { webView.removeJavascriptInterface("AndroidBridge"); webView.destroy() }
+        try { currentLocationListener?.let { locationManager?.removeUpdates(it) } } catch (_: Exception) {}
         try { unregisterReceiver(routeReceiver) } catch (e: Exception) {}
     }
 
@@ -345,10 +336,7 @@ class MainActivity : AppCompatActivity() {
         if (::autoHideSwitch.isInitialized) {
             val isEnabled = settingsManager.getAutoHideEnabled()
             autoHideSwitch.isChecked = isEnabled
-            autoHideHandler.removeCallbacks(autoHideRunnable)
-            if (isEnabled) {
-                autoHideHandler.post(autoHideRunnable)
-            }
+            if (isEnabled) UberAccessibilityService.triggerScan(this)
         }
     }
 
@@ -411,20 +399,14 @@ class MainActivity : AppCompatActivity() {
                 setMargins(dp(4), 0, 0, 0)
             }
             setOnClickListener {
-                if (currentActiveRoutes.isNotEmpty()) {
-                    val bottom = currentActiveRoutes.removeAt(currentActiveRoutes.size - 1)
-                    currentActiveRoutes.add(0, bottom)
-                    displayRoutesOnMap(currentActiveRoutes)
-                } else {
-                    pendingRoutes?.let { displayRoutesOnMap(it) } ?: loadInitialQueueRoutes()
-                }
+                UberAccessibilityService.triggerScan(this@MainActivity)
             }
         }
 
         autoHideSwitch = androidx.appcompat.widget.SwitchCompat(this).apply {
             text = "⚡ Auto-Ocultar "
             textSize = 11f
-            setTextColor(Color.WHITE)
+            setTextColor(getColor(R.color.app_text))
             isChecked = settingsManager.getAutoHideEnabled()
             setPadding(dp(6), dp(2), dp(6), dp(2))
             layoutParams = LinearLayout.LayoutParams(-2, -2).apply {
@@ -432,10 +414,9 @@ class MainActivity : AppCompatActivity() {
             }
             setOnCheckedChangeListener { _, isChecked ->
                 settingsManager.setAutoHideEnabled(isChecked)
-                autoHideHandler.removeCallbacks(autoHideRunnable)
+                UberAccessibilityService.triggerScan(this@MainActivity)
                 if (isChecked) {
                     Toast.makeText(this@MainActivity, "⚡ Auto-Ocultar ATIVADO (Monitoramento Contínuo)...", Toast.LENGTH_SHORT).show()
-                    autoHideHandler.post(autoHideRunnable)
                 } else {
                     Toast.makeText(this@MainActivity, "⏸️ Auto-Ocultar DESATIVADO", Toast.LENGTH_SHORT).show()
                 }
@@ -515,6 +496,23 @@ class MainActivity : AppCompatActivity() {
         }
         webView.addJavascriptInterface(object {
             @android.webkit.JavascriptInterface
+            fun onMapReady() {
+                runOnUiThread {
+                    if (isDestroyed || isFinishing) return@runOnUiThread
+                    isMapLoaded = true
+                    applyMapProvider()
+                    userLat?.let { uLat ->
+                        userLng?.let { uLng ->
+                            updateDriverLocationOnMap(uLat, uLng)
+                        }
+                    }
+                    val routes = pendingRoutes ?: currentActiveRoutes.toList()
+                    pendingRoutes = null
+                    displayRoutesOnMap(routes)
+                }
+            }
+
+            @android.webkit.JavascriptInterface
             fun hideTopTrip() {
                 runOnUiThread {
                     hideTopRideAndCascade(0)
@@ -530,22 +528,9 @@ class MainActivity : AppCompatActivity() {
                 callback?.invoke(origin, true, false)
             }
         }
-        webView.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
-                super.onPageFinished(view, url)
-                isMapLoaded = true
-                applyMapProvider()
-                userLat?.let { uLat ->
-                    userLng?.let { uLng ->
-                        updateDriverLocationOnMap(uLat, uLng)
-                    }
-                }
-                pendingRoutes?.let {
-                    displayRoutesOnMap(it)
-                    pendingRoutes = null
-                }
-            }
-        }
+        webView.webViewClient = WebViewClient()
+        val mapProvidersJs = assets.open("map-providers.js").bufferedReader().use { it.readText() }
+        isMapLoaded = false
 
         val mapHtml = """
             <!DOCTYPE html>
@@ -553,12 +538,8 @@ class MainActivity : AppCompatActivity() {
             <head>
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-                <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-                <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-                <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.css" />
-                <script src="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
-                <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.0/leaflet-maplibre-gl.js"></script>
                 <style>
+                    #map-status { position: absolute; top: 8px; left: 8px; right: 8px; z-index: 1000; padding: 8px; border-radius: 6px; background: #FFFFFF; color: #0F172A; font: 13px sans-serif; }
                     body, html, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #0F172A; }
                     .leaflet-popup-content-wrapper { background: #1E293B; color: #F8FAFC; border-radius: 8px; border: 1px solid #38BDF8; font-family: sans-serif; font-size: 13px; }
                     /* Only OSM base tiles are filtered; route colors and markers stay intact. */
@@ -640,13 +621,17 @@ class MainActivity : AppCompatActivity() {
             </head>
             <body>
                 <div id="map"></div>
+                <div id="map-status" role="status">Carregando mapa…</div>
                 <script>
+                    function initializeMap() {
                     var map = L.map('map', {zoomControl: false}).setView([-23.56168, -46.65598], 13);
-                    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/${if ((resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES) "dark_all" else "voyager"}/{z}/{x}/{y}{r}.png', {
-                        attribution: '© OpenStreetMap contributors',
-                        maxZoom: 19
-                    }).addTo(map);
+                    ${mapProvidersJs}
 
+                    function escapeHtml(value) {
+                        return String(value).replace(/[&<>"']/g, function(c) {
+                            return {'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c];
+                        });
+                    }
                     var routeLayers = [];
                     var mapGeneration = 0;
                     var ROUTE_COLORS = ['#00E5FF', '#22C55E', '#F59E0B', '#EC4899', '#A855F7', '#EAB308', '#14B8A6', '#3B82F6', '#F43F5E'];
@@ -669,6 +654,29 @@ class MainActivity : AppCompatActivity() {
                                 .bindPopup('<b>🚘 Minha Localização Atual (Motorista)</b>');
                         }
                     }
+
+                                function isRealAddressJS(addr) {
+                                    if (!addr || typeof addr !== 'string') return false;
+                                    var raw = addr.trim();
+                                    if (raw.length < 3) return false;
+                                    var lower = raw.toLowerCase();
+                                    if (lower.indexOf('definir') !== -1 ||
+                                        lower.indexOf('escolher no mapa') !== -1 ||
+                                        lower.indexOf('no mapa') !== -1 ||
+                                        lower.indexOf('informado no app') !== -1 ||
+                                        lower.indexOf('não especificado') !== -1 ||
+                                        lower.indexOf('nao especificado') !== -1 ||
+                                        lower.indexOf('não capturado') !== -1 ||
+                                        lower.indexOf('nao capturado') !== -1 ||
+                                        lower.indexOf('não identificado') !== -1 ||
+                                        lower.indexOf('nao identificado') !== -1 ||
+                                        lower.indexOf('sem destino') !== -1 ||
+                                        lower.indexOf('endereço de') !== -1) {
+                                        return false;
+                                    }
+                                    return true;
+                                }
+
 
                     function updateMultiRouteMap(routesJsonStr) {
                         var generation = ++mapGeneration;
@@ -702,14 +710,14 @@ class MainActivity : AppCompatActivity() {
                                 var photoHtml = '';
                                 if (r.showPhoto !== false && r.passengerPhoto && r.passengerPhoto.length > 5) {
                                     photoHtml = '<div class="avatar-circle" style="border-color: ' + color + ';">' +
-                                        '<img src="' + r.passengerPhoto + '" onerror="this.style.display=\'none\';" />' +
+                                        '<img src="' + escapeHtml(r.passengerPhoto) + '" onerror="this.style.display=&#39;none&#39;;" />' +
                                     '</div>';
                                 }
 
                                 var nameHtml = '';
                                 if (r.showName !== false) {
                                     var passName = r.passenger ? r.passenger : 'Passageiro inDrive';
-                                    nameHtml = '<div class="passenger-name-pill" style="border-color: ' + color + '; color: ' + color + ';">👤 ' + passName + '</div>';
+                                    nameHtml = '<div class="passenger-name-pill" style="border-color: ' + color + ';">👤 ' + escapeHtml(passName) + '</div>';
                                 }
 
                                 var pickupArrow = '&#8593;';
@@ -734,28 +742,6 @@ class MainActivity : AppCompatActivity() {
                                     iconSize: [32, 32],
                                     iconAnchor: [16, 16]
                                 });
-
-                                function isRealAddressJS(addr) {
-                                    if (!addr || typeof addr !== 'string') return false;
-                                    var raw = addr.trim();
-                                    if (raw.length < 3) return false;
-                                    var lower = raw.toLowerCase();
-                                    if (lower.indexOf('definir') !== -1 ||
-                                        lower.indexOf('escolher no mapa') !== -1 ||
-                                        lower.indexOf('no mapa') !== -1 ||
-                                        lower.indexOf('informado no app') !== -1 ||
-                                        lower.indexOf('não especificado') !== -1 ||
-                                        lower.indexOf('nao especificado') !== -1 ||
-                                        lower.indexOf('não capturado') !== -1 ||
-                                        lower.indexOf('nao capturado') !== -1 ||
-                                        lower.indexOf('não identificado') !== -1 ||
-                                        lower.indexOf('nao identificado') !== -1 ||
-                                        lower.indexOf('sem destino') !== -1 ||
-                                        lower.indexOf('endereço de') !== -1) {
-                                        return false;
-                                    }
-                                    return true;
-                                }
 
                                 var hasPickup = r.pLat && r.pLng && Math.abs(r.pLat) > 0.001 && Math.abs(r.pLng) > 0.001 && isRealAddressJS(r.pickup);
                                 var hasDropoff = r.dLat && r.dLng && Math.abs(r.dLat) > 0.001 && Math.abs(r.dLng) > 0.001 && isRealAddressJS(r.dropoff);
@@ -841,6 +827,46 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
                     }
+                    window.setMapProvider = setMapProvider;
+                    window.updateDriverLocation = updateDriverLocation;
+                    window.updateMultiRouteMap = updateMultiRouteMap;
+                    window.focusRouteByIdx = focusRouteByIdx;
+                    window.addEventListener('resize', function() { map.invalidateSize(); });
+                    AndroidBridge.onMapReady();
+                    }
+                    var leafletAttempt = 0;
+                    var mapInitialized = false;
+                    function loadLeaflet() {
+                        var hosts = ['https://unpkg.com/leaflet@1.9.4/dist/', 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/'];
+                        if (leafletAttempt >= hosts.length) {
+                            document.getElementById('map-status').textContent = 'Não foi possível carregar o mapa. Verifique a conexão e toque aqui para tentar novamente.';
+                            document.getElementById('map-status').onclick = function() { leafletAttempt = 0; loadLeaflet(); };
+                            return;
+                        }
+                        var host = hosts[leafletAttempt++];
+                        var css = document.createElement('link'); css.rel = 'stylesheet'; css.href = host + 'leaflet.css';
+                        document.head.appendChild(css);
+                        var script = document.createElement('script');
+                        script.src = host + 'leaflet.js';
+                        var finished = false;
+                        function failed() {
+                            if (finished || mapInitialized) return;
+                            finished = true;
+                            loadLeaflet();
+                        }
+                        var timeout = setTimeout(failed, 10000);
+                        script.onload = function() {
+                            clearTimeout(timeout);
+                            finished = true;
+                            if (!mapInitialized) {
+                                mapInitialized = true;
+                                initializeMap();
+                            }
+                        };
+                        script.onerror = function() { clearTimeout(timeout); failed(); };
+                        document.head.appendChild(script);
+                    }
+                    loadLeaflet();
                 </script>
             </body>
             </html>
@@ -875,6 +901,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true) {
+                currentLocationListener = locationListener
                 locationManager?.requestLocationUpdates(LocationManager.GPS_PROVIDER, 3000L, 5f, locationListener)
                 val lastGps = locationManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
                 if (lastGps != null) {
@@ -884,6 +911,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             if (locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true) {
+                currentLocationListener = locationListener
                 locationManager?.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 3000L, 5f, locationListener)
                 val lastNet = locationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
                 if (lastNet != null && userLat == null) {
@@ -1035,65 +1063,8 @@ class MainActivity : AppCompatActivity() {
         // 1. Dispatch swipe gesture (left-to-right) via Accessibility Service
         com.uberanalyzer.service.UberAccessibilityService.triggerHideTopTrip(this, itemIndex = rideIndex)
 
-        // 2. Instantly remove hidden route locally and cascade next route to index 0 across both cards & map
-        if (currentActiveRoutes.isNotEmpty() && rideIndex in currentActiveRoutes.indices) {
-            currentActiveRoutes.removeAt(rideIndex)
-            displayRoutesOnMap(currentActiveRoutes)
-        }
-    }
+        // A fresh service capture confirms removal and updates both cards and map.
 
-    private var lastAutoHideTime = 0L
-
-    fun evaluateAndAutoHideTrips() {
-        if (!settingsManager.getAutoHideEnabled()) return
-
-        val minKm = settingsManager.getMinKmValue().toDouble()
-        val routes = currentActiveRoutes
-        if (routes.isEmpty()) return
-
-        val now = System.currentTimeMillis()
-        if (now - lastAutoHideTime < 1000) return // Cooldown between gesture executions
-
-        val maxCheck = minOf(3, routes.size)
-        var hiddenIndex = -1
-
-        for (i in 0 until maxCheck) {
-            if (i !in routes.indices) break
-            val ride = routes[i]
-            val valuePerKm = if (ride.earningsPerKm > 0) {
-                ride.earningsPerKm
-            } else if (ride.distanceKm > 0) {
-                ride.price / ride.distanceKm
-            } else {
-                0.0
-            }
-
-            // Check if trip R$/km is LESS than the configured minimum meta
-            if (valuePerKm < minKm && valuePerKm > 0.0) {
-                lastAutoHideTime = now
-                hiddenIndex = i
-                val formattedVal = String.format(Locale.getDefault(), "R$ %.2f/km", valuePerKm)
-                val formattedMin = String.format(Locale.getDefault(), "R$ %.2f/km", minKm)
-
-                Toast.makeText(
-                    this,
-                    "⚡ Auto-Ocultar: Item ${i + 1} ($formattedVal < Meta $formattedMin) ➔ Ocultando no inDrive...",
-                    Toast.LENGTH_SHORT
-                ).show()
-
-                // Dispatch swipe gesture for item index i
-                if (com.uberanalyzer.service.UberAccessibilityService.instance != null) {
-                    com.uberanalyzer.service.UberAccessibilityService.triggerHideTopTrip(this, itemIndex = i)
-                }
-
-                break
-            }
-        }
-
-        if (hiddenIndex != -1 && hiddenIndex in currentActiveRoutes.indices) {
-            currentActiveRoutes.removeAt(hiddenIndex)
-            displayRoutesOnMap(currentActiveRoutes)
-        }
     }
 
     private fun renderCardsAndMapUi(limitedRoutes: List<RouteData>, jsRoutesArray: JSONArray) {
@@ -1253,7 +1224,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Trigger Auto-Hide evaluation on active routes if switch is ON
-        evaluateAndAutoHideTrips()
     }
 
     private fun cleanAddressForGeocoding(rawAddress: String): String {
@@ -1387,7 +1357,7 @@ class MainActivity : AppCompatActivity() {
         if (!isMapLoaded) return
         val provider = org.json.JSONObject.quote(settingsManager.getMapProvider())
         val key = org.json.JSONObject.quote(settingsManager.getCartoMapKey())
-        val darkMode = settingsManager.getDarkMapEnabled()
+        val darkMode = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
         webView.evaluateJavascript("setMapProvider($provider, $key, $darkMode)", null)
     }
 
@@ -1414,27 +1384,36 @@ class MainActivity : AppCompatActivity() {
         }
         dialogView.addView(title)
 
-        dialogView.addView(androidx.appcompat.widget.SwitchCompat(this).apply {
-            text = "🌙 Modo escuro do mapa"
-            setTextColor(Color.WHITE)
-            isChecked = settingsManager.getDarkMapEnabled()
-            setPadding(0, dp(8), 0, dp(8))
-            setOnCheckedChangeListener { _, enabled ->
-                settingsManager.setDarkMapEnabled(enabled)
-                applyMapProvider()
-            }
-        })
         dialogView.addView(TextView(this).apply {
-            text = "A interface já usa tema escuro. Esta opção também escurece o mapa e fica salva automaticamente."
-            setTextColor(Color.LTGRAY)
-            textSize = 12f
+            text = "🎨 Aparência do aplicativo e do mapa"
+            setTextColor(getColor(R.color.app_text))
+            textSize = 16f
         })
+        val themeGroup = RadioGroup(this)
+        listOf(-1 to "📱 Seguir sistema", 1 to "☀️ Claro", 2 to "🌙 Escuro").forEach { (mode, label) ->
+            themeGroup.addView(RadioButton(this).apply {
+                id = View.generateViewId()
+                tag = mode
+                text = label
+                setTextColor(getColor(R.color.app_text))
+                isChecked = settingsManager.getThemeMode() == mode
+            })
+        }
+        themeGroup.setOnCheckedChangeListener { group, checkedId ->
+            val selected = group.findViewById<RadioButton>(checkedId)?.tag as? Int ?: return@setOnCheckedChangeListener
+            if (selected != settingsManager.getThemeMode()) {
+                settingsManager.setThemeMode(selected)
+                dialog?.dismiss()
+                delegate.localNightMode = selected
+            }
+        }
+        dialogView.addView(themeGroup)
 
         val mapProviders = listOf("osm", "openfreemap", "carto")
-        val providerNames = listOf("OpenStreetMap — grátis, sem chave", "OpenFreeMap — grátis, sem chave", "CARTO Voyager — faixa grátis, exige chave")
+        val providerNames = listOf("OpenStreetMap — grátis, sem chave", "OpenFreeMap — grátis, sem chave", "CARTO — mapa claro/escuro")
         dialogView.addView(TextView(this).apply {
             text = "🗺️ Provedor do mapa"
-            setTextColor(Color.WHITE)
+            setTextColor(getColor(R.color.app_text))
             textSize = 16f
         })
         val providerGroup = android.widget.RadioGroup(this)
@@ -1443,23 +1422,14 @@ class MainActivity : AppCompatActivity() {
                 id = android.view.View.generateViewId()
                 tag = provider
                 text = providerNames[index]
-                setTextColor(Color.WHITE)
+                setTextColor(getColor(R.color.app_text))
                 isChecked = settingsManager.getMapProvider() == provider
             })
         }
         dialogView.addView(providerGroup)
-        val mapKeyInput = android.widget.EditText(this).apply {
-            hint = "Chave CARTO (somente para CARTO)"
-            setHintTextColor(Color.LTGRAY)
-            setTextColor(Color.WHITE)
-            setSingleLine(true)
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setText(settingsManager.getCartoMapKey())
-        }
-        dialogView.addView(mapKeyInput)
         dialogView.addView(TextView(this).apply {
             text = "Se o mapa atingir o limite ou ficar indisponível, escolha outro e toque em Aplicar. Serviços gratuitos têm políticas de uso e podem ficar indisponíveis."
-            setTextColor(Color.LTGRAY)
+            setTextColor(getColor(R.color.app_secondary))
             textSize = 12f
         })
         dialogView.addView(Button(this).apply {
@@ -1467,15 +1437,9 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener {
                 val selected = providerGroup.findViewById<android.widget.RadioButton>(providerGroup.checkedRadioButtonId)
                 val provider = selected?.tag as? String ?: "osm"
-                val key = mapKeyInput.text.toString().trim()
-                if (provider == "carto" && key.isBlank()) {
-                    mapKeyInput.error = "Informe a chave gratuita da CARTO ou escolha outro mapa"
-                } else {
-                    settingsManager.setCartoMapKey(key)
-                    settingsManager.setMapProvider(provider)
-                    applyMapProvider()
-                    Toast.makeText(this@MainActivity, "Mapa atualizado", Toast.LENGTH_SHORT).show()
-                }
+                settingsManager.setMapProvider(provider)
+                if (isMapLoaded) applyMapProvider() else setupWebView()
+
             }
         })
 
@@ -1718,13 +1682,9 @@ class MainActivity : AppCompatActivity() {
                 settingsManager.setHighProfitAlertKm(parsedHighProfit)
                 settingsManager.setConfirmHideBelowMinKm(confirmHideCheck.isChecked)
 
-                pendingRoutes?.let { displayRoutesOnMap(it) }
-                    ?: loadInitialQueueRoutes()
+                displayRoutesOnMap(pendingRoutes ?: currentActiveRoutes.toList())
 
-                autoHideHandler.removeCallbacks(autoHideRunnable)
-                if (autoHideCheck.isChecked) {
-                    autoHideHandler.post(autoHideRunnable)
-                }
+                UberAccessibilityService.triggerScan(this@MainActivity)
             }
             .setNegativeButton("Cancelar", null)
             .show()
@@ -2254,6 +2214,3 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 }
-
-
-

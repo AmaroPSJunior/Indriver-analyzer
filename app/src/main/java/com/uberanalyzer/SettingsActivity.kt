@@ -12,7 +12,7 @@ import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import com.uberanalyzer.settings.SettingsManager
 
-class SettingsActivity : AppCompatActivity() {
+class SettingsActivity : ThemedActivity() {
 
     private lateinit var settings: SettingsManager
     private val selectedColors = mutableMapOf<String, String>()

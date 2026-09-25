@@ -103,7 +103,7 @@ object RideParser {
         val rides = mutableListOf<InDriverRide>()
         var index = 1
 
-        for (cluster in cardClusters) {
+        for ((screenIndex, cluster) in cardClusters.withIndex()) {
             val clusterTexts = cluster.map { it.text.trim() }.filter { it.isNotBlank() }
             val fullBlockText = clusterTexts.joinToString(" | ")
 
@@ -158,9 +158,9 @@ object RideParser {
                 if (unit == "m") num / 1000.0 else num
             }
 
-            val pickupKm = if (parsedDistances.isNotEmpty()) parsedDistances[0] else 0.5
-            val tripKm = if (parsedDistances.size >= 2) parsedDistances[1] else (if (parsedDistances.size == 1) parsedDistances[0] else 1.0)
-            val totalKm = if (parsedDistances.size >= 2) pickupKm + tripKm else (if (parsedDistances.isNotEmpty()) parsedDistances[0] else 1.0)
+            val pickupKm = if (parsedDistances.isNotEmpty()) parsedDistances[0] else 0.0
+            val tripKm = if (parsedDistances.size >= 2) parsedDistances[1] else (if (parsedDistances.size == 1) parsedDistances[0] else 0.0)
+            val totalKm = if (parsedDistances.size >= 2) pickupKm + tripKm else (if (parsedDistances.isNotEmpty()) parsedDistances[0] else 0.0)
 
             // Duration
             val mins = timeRegex.findAll(fullBlockText).mapNotNull { it.groupValues[1].toIntOrNull() }.toList()
@@ -210,6 +210,8 @@ object RideParser {
                     earningsPerHour = perHour,
                     score = score,
                     paymentMethod = paymentMethod,
+                    screenRowY = priceBox?.centerY(),
+                    screenListIndex = screenIndex,
                     rawText = fullBlockText
                 )
             )
@@ -258,9 +260,9 @@ object RideParser {
                 if (unit == "m") num / 1000.0 else num
             }
 
-            val pickupKm = if (parsedDistances.isNotEmpty()) parsedDistances[0] else 0.5
-            val tripKm = if (parsedDistances.size >= 2) parsedDistances[1] else (if (parsedDistances.size == 1) parsedDistances[0] else 1.0)
-            val totalKm = if (parsedDistances.size >= 2) pickupKm + tripKm else (if (parsedDistances.isNotEmpty()) parsedDistances[0] else 1.0)
+            val pickupKm = if (parsedDistances.isNotEmpty()) parsedDistances[0] else 0.0
+            val tripKm = if (parsedDistances.size >= 2) parsedDistances[1] else (if (parsedDistances.size == 1) parsedDistances[0] else 0.0)
+            val totalKm = if (parsedDistances.size >= 2) pickupKm + tripKm else (if (parsedDistances.isNotEmpty()) parsedDistances[0] else 0.0)
 
             // Duration
             val mins = timeRegex.findAll(trimmed).mapNotNull {
@@ -481,8 +483,8 @@ object RideParser {
             if (unit == "m") num / 1000.0 else num
         }
 
-        val totalKm = if (parsedDistances.isNotEmpty()) parsedDistances.maxOrNull() ?: 1.0 else 1.0
-        val pickupKm = if (parsedDistances.size >= 2) parsedDistances.minOrNull() ?: 0.5 else 0.5
+        val totalKm = if (parsedDistances.isNotEmpty()) parsedDistances.maxOrNull() ?: 1.0 else 0.0
+        val pickupKm = if (parsedDistances.size >= 2) parsedDistances.minOrNull() ?: 0.5 else 0.0
 
         val timeMin = timeRegex.find(text)?.groupValues?.get(1)?.toIntOrNull() ?: (totalKm * 2.5).toInt().coerceAtLeast(4)
 
@@ -543,7 +545,7 @@ object RideParser {
             it.groupValues[1].replace(",", ".").toDoubleOrNull() 
         }.toList()
         
-        val dist = if (kms.size >= 2) kms.sum() else if (kms.isNotEmpty()) kms[0] else 1.0
+        val dist = if (kms.size >= 2) kms.sum() else if (kms.isNotEmpty()) kms[0] else 0.0
 
         val mins = timeRegex.findAll(lowerText).mapNotNull { 
             it.groupValues[1].toIntOrNull()
@@ -574,4 +576,3 @@ object RideParser {
         return normalized.toDoubleOrNull()
     }
 }
-

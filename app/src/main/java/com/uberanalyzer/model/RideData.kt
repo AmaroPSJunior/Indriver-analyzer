@@ -24,7 +24,10 @@ data class InDriverRide(
     val pLat: Double = 0.0,
     val pLng: Double = 0.0,
     val dLat: Double = 0.0,
-    val dLng: Double = 0.0
+    val dLng: Double = 0.0,
+    // Ephemeral screen metadata: never serialized into history or map routes.
+    val screenRowY: Int? = null,
+    val screenListIndex: Int? = null
 ) {
     fun toJsonObject(): JSONObject {
         val json = JSONObject()
@@ -108,4 +111,3 @@ enum class ScoreRating(val label: String, val colorHex: String) {
         fun fromScore(s: Double) = when { s >= 8.0 -> EXCELLENT; s >= 6.0 -> GOOD; s >= 4.0 -> AVERAGE; else -> BAD }
     }
 }
-
