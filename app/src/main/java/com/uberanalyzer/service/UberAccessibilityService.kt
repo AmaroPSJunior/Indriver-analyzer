@@ -16,90 +16,93 @@ class UberAccessibilityService : AccessibilityService() {
     @Volatile
     private var isTaskPending = false
     private var lastScanTime = 0L
+    @Volatile private var recentRides = emptyList<com.uberanalyzer.model.InDriverRide>()
+    @Volatile private var recentWindow: android.graphics.Rect? = null
+    @Volatile private var capturedAt = 0L
+    @Volatile private var scanStartedAt = 0L
+    @Volatile private var selectionInvalidatedAt = 0L
     
     private val scanHandler = android.os.Handler(android.os.Looper.getMainLooper())
     @Volatile private var destroyed = false
     @Volatile private var gesturePending = false
     @Volatile private var nextScanAfter = 0L
-    private data class OpenTarget(val pickup: String, val dropoff: String, val price: Double,
-        val bounds: android.graphics.Rect, val window: android.graphics.Rect, val capturedAt: Long)
-    @Volatile private var openTargets: List<OpenTarget> = emptyList()
-    @Volatile private var openingUntil = 0L
+    private data class SelectionRequest(
+        val identity: RideSelection.Identity,
+        val requestedAt: Long,
+        val result: (String) -> Unit
+    )
+    @Volatile private var pendingSelection: SelectionRequest? = null
 
-    private fun cacheOpenTargets(rides: List<com.uberanalyzer.model.InDriverRide>,
-        lines: List<com.uberanalyzer.ocr.MlKitScreenOcrEngine.OcrLine>, window: android.graphics.Rect) {
-        val now = android.os.SystemClock.elapsedRealtime()
-        openTargets = rides.mapNotNull { ride ->
-            if (!RideParser.isRealAddress(ride.pickupAddress)) return@mapNotNull null
-            val line = lines.singleOrNull { it.text.trim().equals(ride.pickupAddress.trim(), ignoreCase = true) }
-                ?: return@mapNotNull null
-            val bounds = line.boundingBox ?: return@mapNotNull null
-            OpenTarget(ride.pickupAddress, ride.dropoffAddress, ride.price,
-                android.graphics.Rect(bounds), android.graphics.Rect(window), now)
+    fun requestOpenRide(pickup: String, dropoff: String, price: Double, result: (String) -> Unit) {
+        if (destroyed || gesturePending) {
+            result("Aguarde o gesto atual e tente novamente.")
+            return
         }
+        if (findRideWindowBounds(inDriveOnly = true) == null) {
+            result("Mantenha a lista do inDrive visível em tela dividida para selecionar a corrida.")
+            return
+        }
+        val request = SelectionRequest(RideSelection.Identity(pickup, dropoff, price), android.os.SystemClock.elapsedRealtime(), result)
+        pendingSelection = request
+        // Reuse a current, uniquely matched capture before scheduling any new OCR.
+        tryOpenRequestedRide(recentRides, recentWindow)
+        if (pendingSelection !== request) return
+        scanHandler.postDelayed({
+            if (pendingSelection === request) {
+                pendingSelection = null
+                result("Não foi possível identificar uma única corrida na lista atual. Atualize o mapa e tente novamente.")
+            }
+        }, 8000L)
+        requestImmediateInDriverScan()
     }
 
-    /** Runs directly on the UI thread, without waiting for OCR or the periodic scan. */
-    fun openRideImmediately(pickup: String, dropoff: String, price: Double): Boolean {
-        val now = android.os.SystemClock.elapsedRealtime()
-        if (destroyed || gesturePending || now < nextScanAfter || now < openingUntil) return false
-        if (!RideParser.isRealAddress(pickup)) return false
-        // Prefer a live accessibility node. Never open by a potentially stale queue index.
-        for (window in windows.orEmpty()) {
-            val root = window.root ?: continue
+    private fun tryOpenRequestedRide(rides: List<com.uberanalyzer.model.InDriverRide>, bounds: android.graphics.Rect?) {
+        val request = pendingSelection ?: return
+        val scanTime = capturedAt
+        if (bounds == null || !RideSelection.isFresh(scanTime, android.os.SystemClock.elapsedRealtime(), selectionInvalidatedAt)) return
+        val index = RideSelection.findUnique(request.identity, rides.map {
+            RideSelection.Identity(it.pickupAddress, it.dropoffAddress, it.price)
+        }) ?: return
+        val y = rides[index].screenRowY ?: return
+        val open = Runnable {
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (destroyed || pendingSelection !== request || gesturePending || recentRides !== rides ||
+                now - request.requestedAt >= 8000L || !RideSelection.isFresh(scanTime, now, selectionInvalidatedAt) ||
+                bounds != findRideWindowBounds(inDriveOnly = true) || y <= bounds.top || y >= bounds.bottom) return@Runnable
+            pendingSelection = null
+            gesturePending = true
+            val path = android.graphics.Path().apply { moveTo(bounds.exactCenterX(), y.toFloat()) }
+            val gesture = android.accessibilityservice.GestureDescription.Builder()
+                .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 1)).build()
+            fun finish(message: String) {
+                nextScanAfter = android.os.SystemClock.elapsedRealtime() + 2000L
+                gesturePending = false
+                recentRides = emptyList()
+                recentWindow = null
+                request.result(message)
+            }
             try {
-                val pkg = root.packageName?.toString().orEmpty().lowercase(java.util.Locale.ROOT)
-                if (!(pkg.contains("indrive") || pkg.contains("rubus") || pkg.contains("sinet"))) continue
-                val matches = root.findAccessibilityNodeInfosByText(pickup)
-                try {
-                    val node = matches.singleOrNull { it.isVisibleToUser &&
-                        (it.text?.toString()?.trim() == pickup.trim() || it.contentDescription?.toString()?.trim() == pickup.trim()) }
-                    if (node != null) {
-                        var candidate: AccessibilityNodeInfo? = AccessibilityNodeInfo.obtain(node)
-                        try {
-                            repeat(4) {
-                                val current = candidate ?: return@repeat
-                                val bounds = android.graphics.Rect().also(current::getBoundsInScreen)
-                                val windowBounds = android.graphics.Rect().also(window::getBoundsInScreen)
-                                val destinations = if (RideParser.isRealAddress(dropoff))
-                                    current.findAccessibilityNodeInfosByText(dropoff) else emptyList()
-                                val matchesDestination = try {
-                                    destinations.any { it.text?.toString()?.trim() == dropoff.trim() ||
-                                        it.contentDescription?.toString()?.trim() == dropoff.trim() }
-                                } finally { destinations.forEach { it.recycle() } }
-                                if (current.isClickable && matchesDestination && bounds.height() < windowBounds.height() / 2 &&
-                                    current.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                                    openingUntil = now + 2500L
-                                    openTargets = emptyList()
-                                    return true
-                                }
-                                candidate = current.parent
-                                current.recycle()
-                            }
-                        } finally { candidate?.recycle() }
+                val sent = dispatchGesture(gesture, object : GestureResultCallback() {
+                    override fun onCompleted(gestureDescription: android.accessibilityservice.GestureDescription?) {
+                        finish("Toque enviado à corrida correspondente no inDrive.")
                     }
-                } finally { matches.forEach { it.recycle() } }
-            } finally { root.recycle() }
+                    override fun onCancelled(gestureDescription: android.accessibilityservice.GestureDescription?) {
+                        finish("O toque foi cancelado. Tente novamente.")
+                    }
+                }, scanHandler)
+                if (!sent) finish("Não foi possível enviar o toque ao inDrive.")
+            } catch (_: Exception) {
+                finish("Não foi possível enviar o toque ao inDrive.")
+            }
         }
-        // OCR-only screens: reuse the exact address position from the latest capture.
-        val target = openTargets.singleOrNull { it.pickup == pickup && it.dropoff == dropoff && it.price == price }
-            ?: return false
-        if (now - target.capturedAt > 2500L || findRideWindowBounds() != target.window) return false
-        val path = android.graphics.Path().apply {
-            moveTo(target.bounds.exactCenterX(), target.bounds.exactCenterY())
-        }
-        openingUntil = now + 2500L
-        openTargets = emptyList()
-        val sent = dispatchGesture(android.accessibilityservice.GestureDescription.Builder()
-            .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 1))
-            .build(), null, null)
-        if (!sent) openingUntil = 0L
-        return sent
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) open.run()
+        else scanHandler.post(open)
     }
+
     private val autoHideMonitor = object : Runnable {
         override fun run() {
             if (destroyed) return
-            if (com.uberanalyzer.settings.SettingsManager(this@UberAccessibilityService).getAutoHideEnabled()) {
+            if (pendingSelection != null || com.uberanalyzer.settings.SettingsManager(this@UberAccessibilityService).getAutoHideEnabled()) {
                 requestImmediateInDriverScan()
             }
             scanHandler.postDelayed(this, 1800L)
@@ -114,13 +117,13 @@ class UberAccessibilityService : AccessibilityService() {
                           pkg.contains("rubus") || pkg.contains("ubercab") || 
                           pkg.contains("sinet")
 
-        if (isTargetApp && (event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED ||
-                event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
-                event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)) {
-            openTargets = emptyList()
-        }
-
         val now = System.currentTimeMillis()
+
+        if (isTargetApp && (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
+                event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+                event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED)) {
+            selectionInvalidatedAt = android.os.SystemClock.elapsedRealtime()
+        }
 
         // Debounce scan calls to prevent CPU & memory overload
         if (isTaskPending || (now - lastScanTime < 800)) return
@@ -163,12 +166,12 @@ class UberAccessibilityService : AccessibilityService() {
                         try {
                             if (destroyed) return
                             val rideLines = lines.filter { it.boundingBox?.let(targetBounds::contains) == true }
+                            val rideText = rideLines.joinToString(" | ") { it.text }
                             var processed = false
 
                             // 1. Tenta parsing por agrupamento espacial de Bounding Boxes (ML Kit Lines)
                             run {
                                 val spatialRides = RideParser.parseInDriverSpatialLines(rideLines, fullImage)
-                                cacheOpenTargets(spatialRides, rideLines, targetBounds)
                                 // Shadow trial: explicitly calibrated debug builds only; never changes live rides.
                                 if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0 && fullImage != null) {
                                     try {
@@ -189,7 +192,15 @@ class UberAccessibilityService : AccessibilityService() {
                                     }
                                 }
                                 if (spatialRides.isNotEmpty()) {
-                                    processed = processInDriverRides(spatialRides, isOcrSource = true)
+                                    processed = processInDriverRides(spatialRides, isOcrSource = true, capturedWindow = targetBounds)
+                                }
+                            }
+
+                            // 2. Se espacial não gerou resultados, tenta parsing por texto corrido
+                            if (!processed && rideText.isNotBlank()) {
+                                val lowerText = rideText.lowercase(java.util.Locale.getDefault())
+                                if (lowerText.contains("r$") || lowerText.contains("oferecer") || lowerText.contains("aceitar") || lowerText.contains("recusar")) {
+                                    processed = processInDriverQueue(rideText, isOcrSource = true)
                                 }
                             }
 
@@ -212,15 +223,21 @@ class UberAccessibilityService : AccessibilityService() {
     }
 
     private fun isRidePackage(pkg: String): Boolean =
-        pkg.contains("indrive") || pkg.contains("rubus") || pkg.contains("sinet") || pkg.contains("ubercab")
+        pkg.contains("indrive", true) || pkg.contains("rubus", true) || pkg.contains("sinet", true) || pkg.contains("ubercab", true)
 
-    private fun findRideWindowBounds(): android.graphics.Rect? {
+    private fun findRideWindowBounds(inDriveOnly: Boolean = pendingSelection != null): android.graphics.Rect? {
         return try {
             windows?.firstNotNullOfOrNull { window ->
                 val root = window.root ?: return@firstNotNullOfOrNull null
                 try {
-                    if (isRidePackage(root.packageName?.toString().orEmpty())) {
+                    if (isRidePackage(root.packageName?.toString().orEmpty()) && (!inDriveOnly || !root.packageName.toString().contains("ubercab", true))) {
                         android.graphics.Rect().also { window.getBoundsInScreen(it) }.takeUnless { it.isEmpty }
+                    } else null
+                } finally { root.recycle() }
+            } ?: rootInActiveWindow?.let { root ->
+                try {
+                    if (isRidePackage(root.packageName?.toString().orEmpty()) && (!inDriveOnly || !root.packageName.toString().contains("ubercab", true))) {
+                        android.graphics.Rect().also { root.getBoundsInScreen(it) }.takeUnless { it.isEmpty }
                     } else null
                 } finally { root.recycle() }
             }
@@ -237,7 +254,7 @@ class UberAccessibilityService : AccessibilityService() {
                 for (window in activeWindows) {
                     val root = window.root ?: continue
                     val pkg = root.packageName?.toString()?.lowercase(java.util.Locale.getDefault()) ?: ""
-                    if (!isRidePackage(pkg)) {
+                    if (!isRidePackage(pkg) || (pendingSelection != null && pkg.contains("ubercab"))) {
                         try { root.recycle() } catch (_: Exception) {}
                         continue
                     }
@@ -251,7 +268,7 @@ class UberAccessibilityService : AccessibilityService() {
                 val rootNode = rootInActiveWindow
                 if (rootNode != null) {
                     val pkg = rootNode.packageName?.toString()?.lowercase(java.util.Locale.getDefault()) ?: ""
-                    if (isRidePackage(pkg)) {
+                    if (isRidePackage(pkg) && (pendingSelection == null || !pkg.contains("ubercab"))) {
                         try {
                             collectPositionedText(rootNode, capturedLines)
                         } finally {
@@ -261,14 +278,32 @@ class UberAccessibilityService : AccessibilityService() {
                 }
             }
 
-            val rides = RideParser.parseInDriverSpatialLines(capturedLines.distinctBy { it.text to it.boundingBox })
-            processInDriverRides(rides, isOcrSource = false)
+            // Preserve positions: flattening the list loses both card boundaries and swipe targets.
+            val bounds = findRideWindowBounds() ?: return
+            val visible = capturedLines.filter { it.boundingBox?.let(bounds::contains) == true }
+                .distinctBy { "${it.text}:${it.boundingBox}" }
+            val rides = RideParser.parseInDriverSpatialLines(visible)
+            processInDriverRides(rides, isOcrSource = false, capturedWindow = bounds)
+
         } catch (e: Exception) {
             Log.e("UberAccessibility", "Erro no scan de nós: ${e.message}")
         }
     }
 
-    private fun processInDriverRides(rides: List<com.uberanalyzer.model.InDriverRide>, isOcrSource: Boolean): Boolean {
+    private fun processInDriverQueue(text: String, isOcrSource: Boolean = false): Boolean {
+        val rides = RideParser.parseInDriverList(text)
+        return processInDriverRides(rides, isOcrSource)
+    }
+
+    private fun processInDriverRides(
+        rides: List<com.uberanalyzer.model.InDriverRide>,
+        isOcrSource: Boolean,
+        capturedWindow: android.graphics.Rect? = null
+    ): Boolean {
+        recentRides = rides
+        recentWindow = capturedWindow?.let { android.graphics.Rect(it) }
+        capturedAt = scanStartedAt
+        tryOpenRequestedRide(rides, capturedWindow)
         if (rides.isEmpty()) { destinationMemory.update(emptyList(), System.currentTimeMillis()); return false }
 
         val now = System.currentTimeMillis()
@@ -283,20 +318,25 @@ class UberAccessibilityService : AccessibilityService() {
         if (capturedRides.isNotEmpty()) {
             lastProcessedTime = now
 
-            if (autoHide && !gesturePending && android.os.SystemClock.elapsedRealtime() >= maxOf(nextScanAfter, openingUntil)) {
-                val index = AutoHidePolicy.firstBelowMinimum(rides.map { ride ->
-                    if (ride.earningsPerKm > 0.0) ride.earningsPerKm
-                    else if (ride.totalDistanceKm > 0.0) ride.price / ride.totalDistanceKm else 0.0
-                }, minKm)
-                if (index != null) {
+            if (autoHide && pendingSelection == null && !gesturePending && android.os.SystemClock.elapsedRealtime() >= nextScanAfter) {
+                val values = (0..2).map { position ->
+                    val ride = rides.firstOrNull { it.screenListIndex == position }
+                    ride?.earningsPerKm ?: 0.0
+                }
+                val index = AutoHidePolicy.firstBelowMinimum(values, minKm, rides.size)
+                if (index != null && capturedWindow != null) {
+                    val snapshot = recentRides
                     scanHandler.post {
-                        // Recheck the switch immediately before dispatch, including while OCR was running.
-                        if (!destroyed && android.os.SystemClock.elapsedRealtime() >= openingUntil && com.uberanalyzer.settings.SettingsManager(this).getAutoHideEnabled()) {
-                            performSwipeHideItem(index)
+                        val currentSettings = com.uberanalyzer.settings.SettingsManager(this)
+                        val latestMinimum = currentSettings.getMinKmValue().toDouble()
+                        if (!destroyed && pendingSelection == null && recentRides === snapshot && currentSettings.getAutoHideEnabled() &&
+                            AutoHidePolicy.firstBelowMinimum(values, latestMinimum, snapshot.size) == index) {
+                            performSwipeHideItem(index, automatic = true)
                         }
                     }
                 }
             }
+
             val sourceName = if (isOcrSource) "ML Kit OCR (Pixels)" else "Acessibilidade (Nós)"
             sendDebugLog("📥 Capturadas ${capturedRides.size} corridas via $sourceName na Lista inDrive!")
 
@@ -353,7 +393,7 @@ class UberAccessibilityService : AccessibilityService() {
         lines: MutableList<com.uberanalyzer.ocr.MlKitScreenOcrEngine.OcrLine>
     ) {
         if (!node.isVisibleToUser || node.packageName?.toString() == packageName) return
-        if (node.childCount == 0) {
+        run {
             val text = node.text?.toString()?.takeIf { it.isNotBlank() }
                 ?: node.contentDescription?.toString()?.takeIf { it.isNotBlank() }
             if (text != null) {
@@ -387,17 +427,23 @@ class UberAccessibilityService : AccessibilityService() {
      * Executes a left-to-right swipe gesture on a specific item (index 0, 1, or 2) in the inDrive list to hide/dismiss the trip
      */
     @Synchronized
-    fun performSwipeHideItem(itemIndex: Int = 0): Boolean {
-        if (destroyed || itemIndex !in 0..2 || gesturePending || android.os.SystemClock.elapsedRealtime() < nextScanAfter) return false
+    fun performSwipeHideItem(itemIndex: Int = 0, automatic: Boolean = false): Boolean {
+        if (automatic && recentRides.size <= 1) return false
+        if (destroyed || pendingSelection != null || itemIndex < 0 || (automatic && itemIndex > 2) || gesturePending || android.os.SystemClock.elapsedRealtime() < nextScanAfter) return false
         val rideWindow = findRideWindowBounds() ?: return false
+        if (rideWindow != recentWindow) return false
+        val ride = if (automatic) recentRides.firstOrNull { it.screenListIndex == itemIndex }
+                   else recentRides.getOrNull(itemIndex)
+        val target = SwipeTarget.plan(
+            SwipeTarget.Window(rideWindow.left, rideWindow.top, rideWindow.right, rideWindow.bottom),
+            ride?.screenRowY, capturedAt, android.os.SystemClock.elapsedRealtime()
+        ) ?: return false
+        if (automatic && !com.uberanalyzer.settings.SettingsManager(this).getAutoHideEnabled()) return false
         gesturePending = true
-        openTargets = emptyList()
         return try {
-            // Coordinates belong to the ride window, including split-screen on either side.
-            val startX = rideWindow.left + rideWindow.width() * 0.30f
-            val endX = rideWindow.left + rideWindow.width() * 0.90f
-            val targetYRatio = when (itemIndex) { 1 -> 0.40f; 2 -> 0.55f; else -> 0.25f }
-            val targetY = rideWindow.top + rideWindow.height() * targetYRatio
+            val startX = target.startX
+            val endX = target.endX
+            val targetY = target.y
             val path = android.graphics.Path().apply {
                 moveTo(startX, targetY)
                 lineTo(endX, targetY)
@@ -436,7 +482,9 @@ class UberAccessibilityService : AccessibilityService() {
         // Wait for list animation, then capture the new order before another gesture.
         nextScanAfter = android.os.SystemClock.elapsedRealtime() + 1200L
         gesturePending = false
-        lastFullText = ""
+        recentRides = emptyList()
+        recentWindow = null
+        scanHandler.postDelayed({ if (!destroyed) requestImmediateInDriverScan() }, 1300L)
     }
     @Synchronized
     fun requestImmediateInDriverScan() {
@@ -444,6 +492,7 @@ class UberAccessibilityService : AccessibilityService() {
         if (destroyed || gesturePending || android.os.SystemClock.elapsedRealtime() < nextScanAfter || isTaskPending || (now - lastScanTime < 1500)) return
         lastScanTime = now
         isTaskPending = true
+        scanStartedAt = android.os.SystemClock.elapsedRealtime()
         executor.execute {
             try {
                 performInDriverScan()
@@ -475,6 +524,7 @@ class UberAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         destroyed = true
+        pendingSelection = null
         scanHandler.removeCallbacksAndMessages(null)
         executor.shutdownNow()
         super.onDestroy()
@@ -515,4 +565,3 @@ class UberAccessibilityService : AccessibilityService() {
         }
     }
 }
-

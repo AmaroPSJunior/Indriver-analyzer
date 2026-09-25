@@ -19,7 +19,7 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
 
-class HistoryActivity : AppCompatActivity() {
+class HistoryActivity : ThemedActivity() {
 
     private lateinit var db: RideHistoryManager
 
@@ -226,4 +226,3 @@ class HistoryActivity : AppCompatActivity() {
             .show()
     }
 }
-

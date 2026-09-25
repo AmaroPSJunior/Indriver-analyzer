@@ -40,6 +40,8 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import android.widget.RadioGroup
+import android.widget.RadioButton
 import android.accessibilityservice.AccessibilityService
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -54,7 +56,7 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : ThemedActivity() {
 
     private lateinit var accStatusView: TextView
     private lateinit var accButton: Button
@@ -68,19 +70,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var settingsManager: com.uberanalyzer.settings.SettingsManager
     private lateinit var autoHideSwitch: androidx.appcompat.widget.SwitchCompat
 
-    private val autoHideHandler = Handler(Looper.getMainLooper())
-    private val autoHideRunnable = object : Runnable {
-        override fun run() {
-            if (::settingsManager.isInitialized && settingsManager.getAutoHideEnabled()) {
-                evaluateAndAutoHideTrips()
-                autoHideHandler.postDelayed(this, 1800)
-            }
-        }
-    }
-
     private var userLat: Double? = null
     private var userLng: Double? = null
     private var locationManager: LocationManager? = null
+    private var currentLocationListener: LocationListener? = null
     private val LOCATION_PERMISSION_REQUEST_CODE = 1001
 
     companion object {
@@ -332,7 +325,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        autoHideHandler.removeCallbacksAndMessages(null)
+        if (::webView.isInitialized) { webView.removeJavascriptInterface("AndroidBridge"); webView.destroy() }
+        try { currentLocationListener?.let { locationManager?.removeUpdates(it) } } catch (_: Exception) {}
         try { unregisterReceiver(routeReceiver) } catch (e: Exception) {}
     }
 
@@ -342,10 +336,7 @@ class MainActivity : AppCompatActivity() {
         if (::autoHideSwitch.isInitialized) {
             val isEnabled = settingsManager.getAutoHideEnabled()
             autoHideSwitch.isChecked = isEnabled
-            autoHideHandler.removeCallbacks(autoHideRunnable)
-            if (isEnabled) {
-                autoHideHandler.post(autoHideRunnable)
-            }
+            if (isEnabled) UberAccessibilityService.triggerScan(this)
         }
     }
 
@@ -408,20 +399,14 @@ class MainActivity : AppCompatActivity() {
                 setMargins(dp(4), 0, 0, 0)
             }
             setOnClickListener {
-                if (currentActiveRoutes.isNotEmpty()) {
-                    val bottom = currentActiveRoutes.removeAt(currentActiveRoutes.size - 1)
-                    currentActiveRoutes.add(0, bottom)
-                    displayRoutesOnMap(currentActiveRoutes)
-                } else {
-                    pendingRoutes?.let { displayRoutesOnMap(it) } ?: loadInitialQueueRoutes()
-                }
+                UberAccessibilityService.triggerScan(this@MainActivity)
             }
         }
 
         autoHideSwitch = androidx.appcompat.widget.SwitchCompat(this).apply {
             text = "⚡ Auto-Ocultar "
             textSize = 11f
-            setTextColor(Color.WHITE)
+            setTextColor(getColor(R.color.app_text))
             isChecked = settingsManager.getAutoHideEnabled()
             setPadding(dp(6), dp(2), dp(6), dp(2))
             layoutParams = LinearLayout.LayoutParams(-2, -2).apply {
@@ -429,10 +414,9 @@ class MainActivity : AppCompatActivity() {
             }
             setOnCheckedChangeListener { _, isChecked ->
                 settingsManager.setAutoHideEnabled(isChecked)
-                autoHideHandler.removeCallbacks(autoHideRunnable)
+                UberAccessibilityService.triggerScan(this@MainActivity)
                 if (isChecked) {
                     Toast.makeText(this@MainActivity, "⚡ Auto-Ocultar ATIVADO (Monitoramento Contínuo)...", Toast.LENGTH_SHORT).show()
-                    autoHideHandler.post(autoHideRunnable)
                 } else {
                     Toast.makeText(this@MainActivity, "⏸️ Auto-Ocultar DESATIVADO", Toast.LENGTH_SHORT).show()
                 }
@@ -512,12 +496,43 @@ class MainActivity : AppCompatActivity() {
         }
         webView.addJavascriptInterface(object {
             @android.webkit.JavascriptInterface
-            fun openRide(pickup: String, dropoff: String, price: Double) {
+            fun onMapReady() {
                 runOnUiThread {
-                    val opened = runCatching {
-                        UberAccessibilityService.instance?.openRideImmediately(pickup, dropoff, price) == true
-                    }.getOrDefault(false)
-                    if (!opened) Toast.makeText(this@MainActivity, "Viagem indisponível na leitura atual do inDrive. Atualize a fila.", Toast.LENGTH_SHORT).show()
+                    if (isDestroyed || isFinishing) return@runOnUiThread
+                    isMapLoaded = true
+                    applyMapProvider()
+                    userLat?.let { uLat ->
+                        userLng?.let { uLng ->
+                            updateDriverLocationOnMap(uLat, uLng)
+                        }
+                    }
+                    val routes = pendingRoutes ?: currentActiveRoutes.toList()
+                    pendingRoutes = null
+                    displayRoutesOnMap(routes)
+                }
+            }
+
+            @android.webkit.JavascriptInterface
+            fun openRide(payload: String) {
+                runOnUiThread {
+                    if (isDestroyed || isFinishing) return@runOnUiThread
+                    try {
+                        val data = JSONObject(payload)
+                        val pickup = data.getString("pickup")
+                        val dropoff = data.getString("dropoff")
+                        val price = data.getDouble("price")
+                        if (!currentActiveRoutes.any { it.pickup == pickup && it.dropoff == dropoff && it.price == price }) return@runOnUiThread
+                        val service = com.uberanalyzer.service.UberAccessibilityService.instance
+                        if (service == null) {
+                            android.widget.Toast.makeText(this@MainActivity, "Ative a acessibilidade para selecionar a corrida.", android.widget.Toast.LENGTH_LONG).show()
+                        } else {
+                            service.requestOpenRide(pickup, dropoff, price) { message ->
+                                android.widget.Toast.makeText(applicationContext, message, android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    } catch (_: Exception) {
+                        android.widget.Toast.makeText(applicationContext, "Atualize o mapa e tente novamente.", android.widget.Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
 
@@ -537,22 +552,9 @@ class MainActivity : AppCompatActivity() {
                 callback?.invoke(origin, true, false)
             }
         }
-        webView.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
-                super.onPageFinished(view, url)
-                isMapLoaded = true
-                applyMapProvider()
-                userLat?.let { uLat ->
-                    userLng?.let { uLng ->
-                        updateDriverLocationOnMap(uLat, uLng)
-                    }
-                }
-                pendingRoutes?.let {
-                    displayRoutesOnMap(it)
-                    pendingRoutes = null
-                }
-            }
-        }
+        webView.webViewClient = WebViewClient()
+        val mapProvidersJs = assets.open("map-providers.js").bufferedReader().use { it.readText() }
+        isMapLoaded = false
 
         val mapHtml = """
             <!DOCTYPE html>
@@ -560,12 +562,8 @@ class MainActivity : AppCompatActivity() {
             <head>
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-                <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-                <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-                <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.css" />
-                <script src="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
-                <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.0/leaflet-maplibre-gl.js"></script>
                 <style>
+                    #map-status { position: absolute; top: 8px; left: 8px; right: 8px; z-index: 1000; padding: 8px; border-radius: 6px; background: #FFFFFF; color: #0F172A; font: 13px sans-serif; }
                     body, html, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #0F172A; }
                     .leaflet-popup-content-wrapper { background: #1E293B; color: #F8FAFC; border-radius: 8px; border: 1px solid #38BDF8; font-family: sans-serif; font-size: 13px; }
                     /* Only OSM base tiles are filtered; route colors and markers stay intact. */
@@ -579,36 +577,10 @@ class MainActivity : AppCompatActivity() {
                         border: 2px solid #FFF; box-shadow: 0 3px 10px rgba(0,0,0,0.8);
                         font-weight: 900; font-size: 13px; color: #0F172A;
                     }
-                    .avatar-badge-container {
-                        position: absolute; bottom: 0; width: 32px; display: flex; flex-direction: column; align-items: center; pointer-events: none;
+                    .ride-marker-container {
+                        position: absolute; bottom: 0; width: 32px; display: flex; flex-direction: column; align-items: center; pointer-events: auto;
                     }
-                    .avatar-circle {
-                        width: 38px; height: 38px; border-radius: 50%;
-                        display: flex; align-items: center; justify-content: center;
-                        border: 3px solid #FFF;
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.85);
-                        background: #1E293B;
-                        overflow: visible;
-                        position: relative;
-                    }
-                    .avatar-circle img {
-                        width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
-                    }
-                    .avatar-default {
-                        font-size: 20px; line-height: 1;
-                    }
-                    .avatar-num-badge {
-                        position: absolute;
-                        top: -6px; right: -6px;
-                        background: #0F172A;
-                        color: #FFF;
-                        font-size: 11px;
-                        font-weight: 900;
-                        padding: 1px 5px;
-                        border-radius: 8px;
-                        border: 1.5px solid #38BDF8;
-                    }
-                    .passenger-name-pill {
+                    .ride-price-pill {
                         margin-top: 3px;
                         background: #0F172A;
                         color: #F8FAFC;
@@ -641,59 +613,29 @@ class MainActivity : AppCompatActivity() {
                 ${if ((resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) != android.content.res.Configuration.UI_MODE_NIGHT_YES) "@media all" else "@media not all"} {
                         body, html, #map { background: #F8FAFC; }
                         .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #FFFFFF; color: #0F172A; }
-                        .passenger-name-pill, .avatar-num-badge { background: #FFFFFF; color: #0F172A; }
+                        .ride-price-pill { background: #FFFFFF; color: #0F172A; }
                     }
                 </style>
             </head>
             <body>
                 <div id="map"></div>
+                <div id="map-status" role="status">Carregando mapa…</div>
                 <script>
+                    function initializeMap() {
                     var map = L.map('map', {zoomControl: false}).setView([-23.56168, -46.65598], 13);
-                    var baseLayer = null;
-                    var mapNotice = L.control({position: 'topleft'});
-                    mapNotice.onAdd = function() {
-                        this.message = L.DomUtil.create('div');
-                        this.message.style.cssText = 'background:white;color:#222;padding:6px;max-width:230px;display:none';
-                        return this.message;
-                    };
-                    mapNotice.addTo(map);
-                    function showMapError() {
-                        mapNotice.message.textContent = 'Mapa indisponível. Abra ⚙️ e escolha outro mapa.';
-                        mapNotice.message.style.display = 'block';
-                    }
-                    function setMapProvider(provider, key, darkMode) {
-                        if (baseLayer) { map.removeLayer(baseLayer); baseLayer = null; }
-                        mapNotice.message.style.display = 'none';
-                        var osmCredit = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-                        try {
-                            if (provider === 'openfreemap') {
-                                baseLayer = L.maplibreGL({
-                                    style: 'https://tiles.openfreemap.org/styles/' + (darkMode ? 'dark' : 'liberty'),
-                                    attribution: '<a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://openmaptiles.org">OpenMapTiles</a> ' + osmCredit
-                                }).addTo(map);
-                                baseLayer.getMaplibreMap().on('error', showMapError);
-                            } else {
-                                if (provider === 'carto' && !key) { showMapError(); return; }
-                                var url = provider === 'carto'
-                                    ? 'https://{s}.basemaps.cartocdn.com/' + (darkMode ? 'dark_all' : 'rastertiles/voyager') + '/{z}/{x}/{y}.png?key=' + encodeURIComponent(key)
-                                    : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-                                baseLayer = L.tileLayer(url, {
-                                    attribution: osmCredit + (provider === 'carto' ? ' &copy; <a href="https://carto.com/attributions">CARTO</a>' : ''),
-                                    maxZoom: 19, updateWhenIdle: true, keepBuffer: 1,
-                                    className: provider === 'osm' && darkMode ? 'osm-dark-tiles' : ''
-                                }).addTo(map);
-                                baseLayer.on('tileerror', showMapError);
-                            }
-                        } catch (error) { showMapError(); }
-                    }
+                    ${mapProvidersJs}
 
+                    function escapeHtml(value) {
+                        return String(value).replace(/[&<>"']/g, function(c) {
+                            return {'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c];
+                        });
+                    }
                     var routeLayers = [];
                     var mapGeneration = 0;
                     var ROUTE_COLORS = ['#00E5FF', '#22C55E', '#F59E0B', '#EC4899', '#A855F7', '#EAB308', '#14B8A6', '#3B82F6', '#F43F5E'];
                     var allRoutesData = [];
                     var routeLinesMap = {};
                     var driverLocationMarker = null;
-                    var routeRevision = 0;
 
                     function updateDriverLocation(lat, lng) {
                         if (!lat || !lng) return;
@@ -711,8 +653,31 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
 
+                                function isRealAddressJS(addr) {
+                                    if (!addr || typeof addr !== 'string') return false;
+                                    var raw = addr.trim();
+                                    if (raw.length < 3) return false;
+                                    var lower = raw.toLowerCase();
+                                    if (lower.indexOf('definir') !== -1 ||
+                                        lower.indexOf('escolher no mapa') !== -1 ||
+                                        lower.indexOf('no mapa') !== -1 ||
+                                        lower.indexOf('informado no app') !== -1 ||
+                                        lower.indexOf('não especificado') !== -1 ||
+                                        lower.indexOf('nao especificado') !== -1 ||
+                                        lower.indexOf('não capturado') !== -1 ||
+                                        lower.indexOf('nao capturado') !== -1 ||
+                                        lower.indexOf('não identificado') !== -1 ||
+                                        lower.indexOf('nao identificado') !== -1 ||
+                                        lower.indexOf('sem destino') !== -1 ||
+                                        lower.indexOf('endereço de') !== -1) {
+                                        return false;
+                                    }
+                                    return true;
+                                }
+
+
                     function updateMultiRouteMap(routesJsonStr) {
-                        var revision = ++routeRevision;
+                        var generation = ++mapGeneration;
                         for (var i = 0; i < routeLayers.length; i++) {
                             map.removeLayer(routeLayers[i]);
                         }
@@ -738,29 +703,23 @@ class MainActivity : AppCompatActivity() {
                         for (var idx = 0; idx < routes.length; idx++) {
                             (function(idx) {
                                 var r = routes[idx];
-                                function openOriginalRide() {
-                                    AndroidBridge.openRide(r.openPickup, r.openDropoff, r.price);
-                                }
                                 var color = ROUTE_COLORS[idx % ROUTE_COLORS.length];
 
-                                var photoHtml = '';
-                                if (r.showPhoto !== false && r.passengerPhoto && r.passengerPhoto.length > 5) {
-                                    photoHtml = '<div class="avatar-circle" style="border-color: ' + color + ';">' +
-                                        '<img src="' + r.passengerPhoto + '" onerror="this.style.display=\'none\';" />' +
-                                    '</div>';
-                                }
-
-                                var nameHtml = '';
-                                if (r.showName !== false) {
-                                    var passName = r.passenger ? r.passenger : 'Passageiro inDrive';
-                                    nameHtml = '<div class="passenger-name-pill" style="border-color: ' + color + '; color: ' + color + ';">👤 ' + passName + '</div>';
+                                var fare = Number(r.price).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+                                var nameHtml = '<div class="ride-price-pill" style="border-color: ' + color + ';">' + escapeHtml(fare) + '</div>';
+                                function selectOriginalRide() {
+                                    if (generation !== mapGeneration) return;
+                                    window.focusRouteByIdx(idx);
+                                    if (window.AndroidBridge && AndroidBridge.openRide) {
+                                        AndroidBridge.openRide(JSON.stringify({pickup: r.pickup, dropoff: r.dropoff, price: r.price}));
+                                    }
                                 }
 
                                 var pickupArrow = '&#8593;';
                                 var dropoffArrow = '&#8595;';
 
-                                var pickupHtml = '<div class="avatar-badge-container">' + 
-                                    photoHtml + nameHtml +
+                                var pickupHtml = '<div class="ride-marker-container">' + 
+                                    nameHtml +
                                     '<div class="origin-circle" style="background-color: #16A34A; border: 2px solid ' + color + ';">' + pickupArrow + '</div>' +
                                 '</div>';
 
@@ -779,44 +738,20 @@ class MainActivity : AppCompatActivity() {
                                     iconAnchor: [16, 16]
                                 });
 
-                                function isRealAddressJS(addr) {
-                                    if (!addr || typeof addr !== 'string') return false;
-                                    var raw = addr.trim();
-                                    if (raw.length < 3) return false;
-                                    var lower = raw.toLowerCase();
-                                    if (lower.indexOf('definir') !== -1 ||
-                                        lower.indexOf('escolher no mapa') !== -1 ||
-                                        lower.indexOf('no mapa') !== -1 ||
-                                        lower.indexOf('informado no app') !== -1 ||
-                                        lower.indexOf('não especificado') !== -1 ||
-                                        lower.indexOf('nao especificado') !== -1 ||
-                                        lower.indexOf('não capturado') !== -1 ||
-                                        lower.indexOf('nao capturado') !== -1 ||
-                                        lower.indexOf('não identificado') !== -1 ||
-                                        lower.indexOf('nao identificado') !== -1 ||
-                                        lower.indexOf('sem destino') !== -1 ||
-                                        lower.indexOf('endereço de') !== -1) {
-                                        return false;
-                                    }
-                                    return true;
-                                }
-
                                 var hasPickup = r.pLat && r.pLng && Math.abs(r.pLat) > 0.001 && Math.abs(r.pLng) > 0.001 && isRealAddressJS(r.pickup);
                                 var hasDropoff = r.dLat && r.dLng && Math.abs(r.dLat) > 0.001 && Math.abs(r.dLng) > 0.001 && isRealAddressJS(r.dropoff);
 
                                 if (hasPickup) {
                                     var pMarker = L.marker([r.pLat, r.pLng], {icon: pickupIcon}).addTo(map)
-                                        .bindPopup('<b>👤 ' + (r.passenger || 'Passageiro') + ' (🟢 EMBARQUE)</b><br><b>R$ ' + r.price.toFixed(2) + ' (' + r.distanceKm + ' km)</b><br>📍 ' + r.pickup);
+                                        .bindPopup('<b>🟢 EMBARQUE • ' + escapeHtml(fare) + '</b><br>📍 ' + escapeHtml(r.pickup)).on('click', selectOriginalRide);
                                     routeLayers.push(pMarker);
-                                    pMarker.on('click', openOriginalRide);
                                     groupLayers.push(pMarker);
                                 }
 
                                 if (hasDropoff) {
                                     var dMarker = L.marker([r.dLat, r.dLng], {icon: dropoffIcon}).addTo(map)
-                                        .bindPopup('<b>🟠 DESTINO • 👤 ' + (r.passenger || 'Passageiro') + '</b><br><b>R$ ' + r.price.toFixed(2) + ' (' + r.distanceKm + ' km)</b><br>🏁 ' + r.dropoff);
+                                        .bindPopup('<b>🔴 DESEMBARQUE • ' + escapeHtml(fare) + '</b><br>🏁 ' + escapeHtml(r.dropoff)).on('click', selectOriginalRide);
                                     routeLayers.push(dMarker);
-                                    dMarker.on('click', openOriginalRide);
                                     groupLayers.push(dMarker);
                                 }
 
@@ -826,7 +761,7 @@ class MainActivity : AppCompatActivity() {
                                     fetch(osrmUrl)
                                         .then(function(res) { return res.json(); })
                                         .then(function(data) {
-                                            if (revision !== routeRevision) return;
+                                            if (generation !== mapGeneration) return;
                                             var latlngs;
                                             if (data && data.routes && data.routes.length > 0) {
                                                 latlngs = data.routes[0].geometry.coordinates.map(function(c) { return [c[1], c[0]]; });
@@ -840,14 +775,13 @@ class MainActivity : AppCompatActivity() {
                                                 smoothFactor: 1
                                             }).addTo(map);
 
-                                            line.bindTooltip('👤 ' + (r.passenger || 'Passageiro') + ' • R$ ' + r.price.toFixed(2), {permanent: false, sticky: true});
+                                            line.bindTooltip(escapeHtml(fare), {permanent: false, sticky: true}).on('click', selectOriginalRide);
                                             routeLayers.push(line);
-                                            line.on('click', openOriginalRide);
                                             groupLayers.push(line);
                                             routeLinesMap[idx] = line;
                                         })
                                         .catch(function(err) {
-                                            if (revision !== routeRevision) return;
+                                            if (generation !== mapGeneration) return;
                                             var latlngs = [[r.pLat, r.pLng], [r.dLat, r.dLng]];
                                             var line = L.polyline(latlngs, {
                                                 color: color,
@@ -855,9 +789,8 @@ class MainActivity : AppCompatActivity() {
                                                 opacity: 0.95,
                                                 smoothFactor: 1
                                             }).addTo(map);
-                                            line.bindTooltip('👤 ' + (r.passenger || 'Passageiro') + ' • R$ ' + r.price.toFixed(2), {permanent: false, sticky: true});
+                                            line.bindTooltip(escapeHtml(fare), {permanent: false, sticky: true}).on('click', selectOriginalRide);
                                             routeLayers.push(line);
-                                            line.on('click', openOriginalRide);
                                             groupLayers.push(line);
                                             routeLinesMap[idx] = line;
                                         });
@@ -889,6 +822,46 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
                     }
+                    window.setMapProvider = setMapProvider;
+                    window.updateDriverLocation = updateDriverLocation;
+                    window.updateMultiRouteMap = updateMultiRouteMap;
+                    window.focusRouteByIdx = focusRouteByIdx;
+                    window.addEventListener('resize', function() { map.invalidateSize(); });
+                    AndroidBridge.onMapReady();
+                    }
+                    var leafletAttempt = 0;
+                    var mapInitialized = false;
+                    function loadLeaflet() {
+                        var hosts = ['https://unpkg.com/leaflet@1.9.4/dist/', 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/'];
+                        if (leafletAttempt >= hosts.length) {
+                            document.getElementById('map-status').textContent = 'Não foi possível carregar o mapa. Verifique a conexão e toque aqui para tentar novamente.';
+                            document.getElementById('map-status').onclick = function() { leafletAttempt = 0; loadLeaflet(); };
+                            return;
+                        }
+                        var host = hosts[leafletAttempt++];
+                        var css = document.createElement('link'); css.rel = 'stylesheet'; css.href = host + 'leaflet.css';
+                        document.head.appendChild(css);
+                        var script = document.createElement('script');
+                        script.src = host + 'leaflet.js';
+                        var finished = false;
+                        function failed() {
+                            if (finished || mapInitialized) return;
+                            finished = true;
+                            loadLeaflet();
+                        }
+                        var timeout = setTimeout(failed, 10000);
+                        script.onload = function() {
+                            clearTimeout(timeout);
+                            finished = true;
+                            if (!mapInitialized) {
+                                mapInitialized = true;
+                                initializeMap();
+                            }
+                        };
+                        script.onerror = function() { clearTimeout(timeout); failed(); };
+                        document.head.appendChild(script);
+                    }
+                    loadLeaflet();
                 </script>
             </body>
             </html>
@@ -923,6 +896,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true) {
+                currentLocationListener = locationListener
                 locationManager?.requestLocationUpdates(LocationManager.GPS_PROVIDER, 3000L, 5f, locationListener)
                 val lastGps = locationManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
                 if (lastGps != null) {
@@ -932,6 +906,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             if (locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true) {
+                currentLocationListener = locationListener
                 locationManager?.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 3000L, 5f, locationListener)
                 val lastNet = locationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
                 if (lastNet != null && userLat == null) {
@@ -1027,20 +1002,18 @@ class MainActivity : AppCompatActivity() {
                 val (dLat, dLng) = resolveCoordinates(route.dropoff, false, route.distanceKm, index)
 
                 val jsObj = JSONObject().apply {
-                    put("pickup", route.pickup.replace("'", "\\'").replace("\"", ""))
-                    put("dropoff", route.dropoff.replace("'", "\\'").replace("\"", ""))
+                    put("pickup", route.pickup)
+                    put("dropoff", route.dropoff)
                     put("price", route.price)
-                    put("openPickup", route.pickup)
-                    put("openDropoff", route.dropoff)
                     put("distanceKm", route.distanceKm)
                     put("pLat", pLat)
                     put("pLng", pLng)
                     put("dLat", dLat)
                     put("dLng", dLng)
-                    put("passenger", route.passenger)
-                    put("passengerPhoto", route.passengerPhoto)
-                    put("showPhoto", settingsManager.getShowPassengerPhoto())
-                    put("showName", settingsManager.getShowPassengerName())
+
+
+
+
                 }
                 jsRoutesArray.put(jsObj)
             }
@@ -1085,19 +1058,8 @@ class MainActivity : AppCompatActivity() {
         // 1. Dispatch swipe gesture (left-to-right) via Accessibility Service
         com.uberanalyzer.service.UberAccessibilityService.triggerHideTopTrip(this, itemIndex = rideIndex)
 
-        // 2. Instantly remove hidden route locally and cascade next route to index 0 across both cards & map
-        if (currentActiveRoutes.isNotEmpty() && rideIndex in currentActiveRoutes.indices) {
-            currentActiveRoutes.removeAt(rideIndex)
-            displayRoutesOnMap(currentActiveRoutes)
-        }
-    }
+        // A fresh service capture confirms removal and updates both cards and map.
 
-    private var lastAutoHideTime = 0L
-
-    fun evaluateAndAutoHideTrips() {
-        if (!settingsManager.getAutoHideEnabled()) return
-        // Only a fresh service scan may hide a ride; cached cards can be stale.
-        com.uberanalyzer.service.UberAccessibilityService.instance?.requestImmediateInDriverScan()
     }
 
     private fun renderCardsAndMapUi(limitedRoutes: List<RouteData>, jsRoutesArray: JSONArray) {
@@ -1248,16 +1210,15 @@ class MainActivity : AppCompatActivity() {
             routesCardsContainer.addView(card)
         }
 
-        val jsonStr = jsRoutesArray.toString().replace("'", "\\'")
-        val jsCall = "javascript:updateMultiRouteMap('$jsonStr');"
+        val jsonStr = JSONObject.quote(jsRoutesArray.toString())
+        val jsCall = "javascript:updateMultiRouteMap($jsonStr);"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            webView.evaluateJavascript("updateMultiRouteMap('$jsonStr')", null)
+            webView.evaluateJavascript("updateMultiRouteMap($jsonStr)", null)
         } else {
             webView.loadUrl(jsCall)
         }
 
         // Trigger Auto-Hide evaluation on active routes if switch is ON
-        evaluateAndAutoHideTrips()
     }
 
     private fun cleanAddressForGeocoding(rawAddress: String): String {
@@ -1391,7 +1352,7 @@ class MainActivity : AppCompatActivity() {
         if (!isMapLoaded) return
         val provider = org.json.JSONObject.quote(settingsManager.getMapProvider())
         val key = org.json.JSONObject.quote(settingsManager.getCartoMapKey())
-        val darkMode = settingsManager.getDarkMapEnabled()
+        val darkMode = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
         webView.evaluateJavascript("setMapProvider($provider, $key, $darkMode)", null)
     }
 
@@ -1418,27 +1379,36 @@ class MainActivity : AppCompatActivity() {
         }
         dialogView.addView(title)
 
-        dialogView.addView(androidx.appcompat.widget.SwitchCompat(this).apply {
-            text = "🌙 Modo escuro do mapa"
-            setTextColor(Color.WHITE)
-            isChecked = settingsManager.getDarkMapEnabled()
-            setPadding(0, dp(8), 0, dp(8))
-            setOnCheckedChangeListener { _, enabled ->
-                settingsManager.setDarkMapEnabled(enabled)
-                applyMapProvider()
-            }
-        })
         dialogView.addView(TextView(this).apply {
-            text = "A interface já usa tema escuro. Esta opção também escurece o mapa e fica salva automaticamente."
-            setTextColor(Color.LTGRAY)
-            textSize = 12f
+            text = "🎨 Aparência do aplicativo e do mapa"
+            setTextColor(getColor(R.color.app_text))
+            textSize = 16f
         })
+        val themeGroup = RadioGroup(this)
+        listOf(-1 to "📱 Seguir sistema", 1 to "☀️ Claro", 2 to "🌙 Escuro").forEach { (mode, label) ->
+            themeGroup.addView(RadioButton(this).apply {
+                id = View.generateViewId()
+                tag = mode
+                text = label
+                setTextColor(getColor(R.color.app_text))
+                isChecked = settingsManager.getThemeMode() == mode
+            })
+        }
+        themeGroup.setOnCheckedChangeListener { group, checkedId ->
+            val selected = group.findViewById<RadioButton>(checkedId)?.tag as? Int ?: return@setOnCheckedChangeListener
+            if (selected != settingsManager.getThemeMode()) {
+                settingsManager.setThemeMode(selected)
+                dialog?.dismiss()
+                delegate.localNightMode = selected
+            }
+        }
+        dialogView.addView(themeGroup)
 
         val mapProviders = listOf("osm", "openfreemap", "carto")
-        val providerNames = listOf("OpenStreetMap — grátis, sem chave", "OpenFreeMap — grátis, sem chave", "CARTO Voyager — faixa grátis, exige chave")
+        val providerNames = listOf("OpenStreetMap — grátis, sem chave", "OpenFreeMap — grátis, sem chave", "CARTO — mapa claro/escuro")
         dialogView.addView(TextView(this).apply {
             text = "🗺️ Provedor do mapa"
-            setTextColor(Color.WHITE)
+            setTextColor(getColor(R.color.app_text))
             textSize = 16f
         })
         val providerGroup = android.widget.RadioGroup(this)
@@ -1447,23 +1417,14 @@ class MainActivity : AppCompatActivity() {
                 id = android.view.View.generateViewId()
                 tag = provider
                 text = providerNames[index]
-                setTextColor(Color.WHITE)
+                setTextColor(getColor(R.color.app_text))
                 isChecked = settingsManager.getMapProvider() == provider
             })
         }
         dialogView.addView(providerGroup)
-        val mapKeyInput = android.widget.EditText(this).apply {
-            hint = "Chave CARTO (somente para CARTO)"
-            setHintTextColor(Color.LTGRAY)
-            setTextColor(Color.WHITE)
-            setSingleLine(true)
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setText(settingsManager.getCartoMapKey())
-        }
-        dialogView.addView(mapKeyInput)
         dialogView.addView(TextView(this).apply {
             text = "Se o mapa atingir o limite ou ficar indisponível, escolha outro e toque em Aplicar. Serviços gratuitos têm políticas de uso e podem ficar indisponíveis."
-            setTextColor(Color.LTGRAY)
+            setTextColor(getColor(R.color.app_secondary))
             textSize = 12f
         })
         dialogView.addView(Button(this).apply {
@@ -1471,15 +1432,9 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener {
                 val selected = providerGroup.findViewById<android.widget.RadioButton>(providerGroup.checkedRadioButtonId)
                 val provider = selected?.tag as? String ?: "osm"
-                val key = mapKeyInput.text.toString().trim()
-                if (provider == "carto" && key.isBlank()) {
-                    mapKeyInput.error = "Informe a chave gratuita da CARTO ou escolha outro mapa"
-                } else {
-                    settingsManager.setCartoMapKey(key)
-                    settingsManager.setMapProvider(provider)
-                    applyMapProvider()
-                    Toast.makeText(this@MainActivity, "Mapa atualizado", Toast.LENGTH_SHORT).show()
-                }
+                settingsManager.setMapProvider(provider)
+                if (isMapLoaded) applyMapProvider() else setupWebView()
+
             }
         })
 
@@ -1722,13 +1677,9 @@ class MainActivity : AppCompatActivity() {
                 settingsManager.setHighProfitAlertKm(parsedHighProfit)
                 settingsManager.setConfirmHideBelowMinKm(confirmHideCheck.isChecked)
 
-                pendingRoutes?.let { displayRoutesOnMap(it) }
-                    ?: loadInitialQueueRoutes()
+                displayRoutesOnMap(pendingRoutes ?: currentActiveRoutes.toList())
 
-                autoHideHandler.removeCallbacks(autoHideRunnable)
-                if (autoHideCheck.isChecked) {
-                    autoHideHandler.post(autoHideRunnable)
-                }
+                UberAccessibilityService.triggerScan(this@MainActivity)
             }
             .setNegativeButton("Cancelar", null)
             .show()
@@ -2258,6 +2209,3 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 }
-
-
-
