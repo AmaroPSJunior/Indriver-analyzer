@@ -1,17 +1,14 @@
-import java.util.Base64
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
 
-// Captura a variável enviada pelo parâmetro -PbuildNumber do Gradle.
-// Se não for informada (ex: build local), usa o valor padrão 1.
-val buildNum: Int = if (project.hasProperty("buildNumber")) {
-    project.property("buildNumber").toString().toIntOrNull() ?: 1
-} else {
-    1
-}
+// CI supplies a strictly increasing build number; local test builds default to 1.
+val buildNum = providers.gradleProperty("buildNumber").orNull?.let { value ->
+    requireNotNull(value.toIntOrNull()?.takeIf { it in 1..2100000000 }) {
+        "buildNumber must be an integer between 1 and 2100000000"
+    }
+} ?: 1
 
 android {
     namespace = "com.uberanalyzer"
@@ -29,25 +26,9 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Restored from the persistent Actions secret or supplied locally.
+    // Never generate a replacement: a new signing key prevents in-place updates.
     val keystoreFile = file("${rootDir}/debug.keystore")
-    if (!keystoreFile.exists()) {
-        val base64File = file("${rootDir}/debug.keystore.base64")
-        if (base64File.exists()) {
-            try {
-                keystoreFile.writeBytes(Base64.getDecoder().decode(base64File.readText().trim()))
-            } catch (e: Exception) {
-                println("Failed to decode base64 keystore: ${e.message}")
-            }
-        }
-        if (!keystoreFile.exists()) {
-            try {
-                val cmd = arrayOf("keytool", "-genkey", "-v", "-keystore", keystoreFile.absolutePath, "-storepass", "android", "-alias", "androiddebugkey", "-keypass", "android", "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000", "-dname", "CN=Android Debug,O=Android,C=US")
-                ProcessBuilder(*cmd).start().waitFor()
-            } catch (e: Exception) {
-                println("Warning: Could not generate debug.keystore: ${e.message}")
-            }
-        }
-    }
 
     signingConfigs {
         create("debugConfig") {
