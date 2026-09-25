@@ -474,6 +474,15 @@ class MainActivity : ThemedActivity() {
         }
         header.addView(accButton)
 
+        val cardsDivider = View(this).apply {
+            setBackgroundColor(getColor(R.color.app_input))
+            contentDescription = "Divisor entre a barra superior e os cards"
+            layoutParams = LinearLayout.LayoutParams(-1, dp(1)).apply {
+                setMargins(0, dp(4), 0, dp(2))
+            }
+        }
+        header.addView(cardsDivider)
+
         // --- Horizontal Scroll View for Multi-Route Cards ---
         val scrollView = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
