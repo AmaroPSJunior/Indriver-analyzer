@@ -515,6 +515,11 @@ class MainActivity : ThemedActivity() {
         }
         webView.addJavascriptInterface(object {
             @android.webkit.JavascriptInterface
+            fun onInterestPointsReady() {
+                runOnUiThread { updateInterestPointsOnMap() }
+            }
+
+            @android.webkit.JavascriptInterface
             fun onMapReady() {
                 runOnUiThread {
                     if (isDestroyed || isFinishing) return@runOnUiThread
@@ -842,10 +847,38 @@ class MainActivity : ThemedActivity() {
                     }
                     window.setMapProvider = setMapProvider;
                     window.updateDriverLocation = updateDriverLocation;
+                    function updateInterestPoints(pointsJson) {
+                        var points = [];
+                        try { points = JSON.parse(pointsJson) || []; } catch(e) { return; }
+                        if (window.interestPointLayers) {
+                            window.interestPointLayers.forEach(function(layer) { map.removeLayer(layer); });
+                        }
+                        window.interestPointLayers = [];
+                        points.forEach(function(point) {
+                            if (!point.visible || !point.address) return;
+                            var query = encodeURIComponent(point.address);
+                            fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=' + query, {headers: {'Accept-Language': 'pt-BR'}})
+                                .then(function(res) { return res.json(); })
+                                .then(function(results) {
+                                    if (!results || !results.length) return;
+                                    var icon = L.divIcon({
+                                        className: '',
+                                        html: '<div style="width:34px;height:34px;border-radius:50%;background:#0F172A;border:2px solid #38BDF8;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 2px 6px rgba(0,0,0,.55);">' + escapeHtml(point.icon || '📍') + '</div>',
+                                        iconSize: [34,34], iconAnchor: [17,17]
+                                    });
+                                    var marker = L.marker([Number(results[0].lat), Number(results[0].lon)], {icon: icon})
+                                        .bindTooltip('<b>' + escapeHtml(point.name || 'Ponto de interesse') + '</b><br>' + escapeHtml(point.address), {sticky:true})
+                                        .addTo(map);
+                                    window.interestPointLayers.push(marker);
+                                }).catch(function() {});
+                        });
+                    }
                     window.updateMultiRouteMap = updateMultiRouteMap;
+                    window.updateInterestPoints = updateInterestPoints;
                     window.focusRouteByIdx = focusRouteByIdx;
                     window.addEventListener('resize', function() { map.invalidateSize(); });
                     AndroidBridge.onMapReady();
+                    AndroidBridge.onInterestPointsReady();
                     }
                     var leafletAttempt = 0;
                     var mapInitialized = false;
@@ -958,6 +991,47 @@ class MainActivity : ThemedActivity() {
     private val geocodeCache = ConcurrentHashMap<String, Pair<Double, Double>>()
 
     private var routeRenderGeneration = 0L
+
+    private fun updateInterestPointsOnMap() {
+        if (!::webView.isInitialized || !isMapLoaded) return
+        val payload = JSONObject.quote(settingsManager.getMapInterestPoints())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) webView.evaluateJavascript("updateInterestPoints($payload)", null)
+        else webView.loadUrl("javascript:updateInterestPoints($payload);")
+    }
+
+    private fun showInterestPointsDialog() {
+        val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
+        val points = try { JSONArray(settingsManager.getMapInterestPoints()) } catch (_: Exception) { JSONArray() }
+        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(16), dp(20), dp(8)) }
+        val name = EditText(this).apply { hint = "Nome do ponto (ex.: Área de trabalho)" }
+        val address = EditText(this).apply { hint = "Endereço"; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES }
+        val icon = EditText(this).apply { hint = "Ícone (ex.: 🏠, ⭐, ⛽, 📍)"; setText("📍") }
+        container.addView(TextView(this).apply { text = "📍 Pontos de interesse"; textSize = 18f; typeface = Typeface.DEFAULT_BOLD })
+        container.addView(name); container.addView(address); container.addView(icon)
+        val visibility = androidx.appcompat.widget.SwitchCompat(this).apply { text = "Visível no mapa"; isChecked = true }
+        container.addView(visibility)
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        for (i in 0 until points.length()) {
+            val p = points.optJSONObject(i) ?: continue
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            val label = TextView(this).apply { text = (p.optString("icon","📍") + " " + p.optString("name","Ponto")); setTextColor(getColor(R.color.app_text)); layoutParams = LinearLayout.LayoutParams(0,-2,1f) }
+            val toggle = androidx.appcompat.widget.SwitchCompat(this).apply { isChecked = p.optBoolean("visible", true) }
+            val remove = Button(this).apply { text = "✕"; setOnClickListener { points.remove(i); settingsManager.setMapInterestPoints(points.toString()); dialog?.dismiss(); showInterestPointsDialog() } }
+            toggle.setOnCheckedChangeListener { _, checked -> p.put("visible", checked); settingsManager.setMapInterestPoints(points.toString()); updateInterestPointsOnMap() }
+            row.addView(label); row.addView(toggle); row.addView(remove); list.addView(row)
+        }
+        container.addView(list)
+        var dialog: androidx.appcompat.app.AlertDialog? = null
+        dialog = androidx.appcompat.app.AlertDialog.Builder(this).setView(container).setNegativeButton("Fechar", null).setPositiveButton("Adicionar", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                if (name.text.toString().trim().isBlank() || address.text.toString().trim().isBlank()) { Toast.makeText(this, "Informe o nome e o endereço.", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
+                points.put(JSONObject().apply { put("name", name.text.toString().trim()); put("address", address.text.toString().trim()); put("icon", icon.text.toString().trim().ifBlank { "📍" }); put("visible", visibility.isChecked) })
+                settingsManager.setMapInterestPoints(points.toString()); updateInterestPointsOnMap(); dialog.dismiss()
+            }
+        }
+        dialog.show()
+    }
 
     private fun displayRoutesOnMap(routes: List<RouteData>) {
         val generation = ++routeRenderGeneration
@@ -1439,6 +1513,11 @@ class MainActivity : ThemedActivity() {
             setOnClickListener {
                 startActivity(Intent(this@MainActivity, AppUpdateActivity::class.java))
             }
+        })
+
+        dialogView.addView(Button(this).apply {
+            text = "📍 Pontos de interesse do mapa"
+            setOnClickListener { showInterestPointsDialog() }
         })
 
         dialogView.addView(TextView(this).apply {

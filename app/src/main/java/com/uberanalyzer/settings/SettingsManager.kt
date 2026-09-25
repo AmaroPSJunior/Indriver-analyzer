@@ -32,6 +32,7 @@ class SettingsManager(context: Context) {
         const val KEY_SHOW_PASSENGER_PHOTO = "show_passenger_photo"
         const val KEY_SHOW_PASSENGER_NAME = "show_passenger_name"
         const val KEY_SHOW_ROUTE_METRICS = "show_route_metrics"
+        const val KEY_MAP_INTEREST_POINTS = "map_interest_points"
 
         // Defaults
         const val DEFAULT_MIN_KM = 2.0f
@@ -88,6 +89,9 @@ class SettingsManager(context: Context) {
 
     fun getShowRouteMetrics(): Boolean = prefs.getBoolean(KEY_SHOW_ROUTE_METRICS, true)
     fun setShowRouteMetrics(value: Boolean) = prefs.edit().putBoolean(KEY_SHOW_ROUTE_METRICS, value).apply()
+
+    fun getMapInterestPoints(): String = prefs.getString(KEY_MAP_INTEREST_POINTS, "[]") ?: "[]"
+    fun setMapInterestPoints(value: String) = prefs.edit().putString(KEY_MAP_INTEREST_POINTS, value).apply()
 
     fun getCategoryColor(categoryKey: String, default: String): String = prefs.getString(categoryKey, default) ?: default
     fun setCategoryColor(categoryKey: String, color: String) = prefs.edit().putString(categoryKey, color).apply()
