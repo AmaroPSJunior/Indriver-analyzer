@@ -16,12 +16,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Install Gradle (the repository wrapper is not used)
-        run: |
-          wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip
-          unzip -q gradle-8.5-bin.zip -d "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/gradle-8.5/bin" >> "$GITHUB_PATH"
+      - uses: gradle/actions/setup-gradle@v4
       - name: Test map
         run: node scripts/test-map.cjs
       - name: Compile and run Android unit tests
-        run: gradle compileDebugKotlin testDebugUnitTest --no-daemon
+        run: bash ./gradlew compileDebugKotlin testDebugUnitTest --no-daemon
