@@ -6,6 +6,7 @@ import android.graphics.Color
 
 class SettingsManager(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("uber_analyzer_prefs", Context.MODE_PRIVATE)
+    private val interestPointDatabase = InterestPointDatabase(context.applicationContext)
 
     companion object {
         // Thresholds
@@ -90,8 +91,8 @@ class SettingsManager(context: Context) {
     fun getShowRouteMetrics(): Boolean = prefs.getBoolean(KEY_SHOW_ROUTE_METRICS, true)
     fun setShowRouteMetrics(value: Boolean) = prefs.edit().putBoolean(KEY_SHOW_ROUTE_METRICS, value).apply()
 
-    fun getMapInterestPoints(): String = prefs.getString(KEY_MAP_INTEREST_POINTS, "[]") ?: "[]"
-    fun setMapInterestPoints(value: String) = prefs.edit().putString(KEY_MAP_INTEREST_POINTS, value).apply()
+    fun getMapInterestPoints(): String = interestPointDatabase.read()
+    fun setMapInterestPoints(value: String) = interestPointDatabase.write(value)
 
     fun getCategoryColor(categoryKey: String, default: String): String = prefs.getString(categoryKey, default) ?: default
     fun setCategoryColor(categoryKey: String, color: String) = prefs.edit().putString(categoryKey, color).apply()
