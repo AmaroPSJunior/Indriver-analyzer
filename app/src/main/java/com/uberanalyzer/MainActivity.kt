@@ -878,7 +878,7 @@ class MainActivity : ThemedActivity() {
                     window.focusRouteByIdx = focusRouteByIdx;
                     window.addEventListener('resize', function() { map.invalidateSize(); });
                     AndroidBridge.onMapReady();
-                    AndroidBridge.onInterestPointsReady();
+                    if (AndroidBridge.onInterestPointsReady) AndroidBridge.onInterestPointsReady();
                     }
                     var leafletAttempt = 0;
                     var mapInitialized = false;
