@@ -58,7 +58,6 @@ import kotlin.math.abs
 
 class MainActivity : ThemedActivity() {
 
-    private lateinit var accStatusView: TextView
     private lateinit var accButton: Button
     private lateinit var titleText: TextView
     private var cardsMinimized = false
@@ -343,8 +342,6 @@ class MainActivity : ThemedActivity() {
 
     private fun updateStatusView() {
         val accEnabled = isAccessibilityServiceEnabled()
-        accStatusView.text = if (accEnabled) "✅ LEITOR ATIVO (LADO A LADO COM INDRIVE)" else "⚠️ LEITOR DESATIVADO — ATIVE PARA LER DA TELA"
-        accStatusView.setTextColor(if (accEnabled) getColor(R.color.app_success) else getColor(R.color.app_warning))
         accButton.visibility = if (accEnabled) View.GONE else View.VISIBLE
     }
 
@@ -456,13 +453,6 @@ class MainActivity : ThemedActivity() {
             addView(cardsToggle, LinearLayout.LayoutParams(dp(48), dp(48)))
             addView(configButton, LinearLayout.LayoutParams(dp(48), dp(48)))
         })
-
-        accStatusView = TextView(this).apply {
-            textSize = 11f
-            typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, dp(3), 0, dp(4))
-        }
-        header.addView(accStatusView)
 
         accButton = Button(this).apply {
             text = "📋 Checklist de Permissões (Ativar Leitor)"
