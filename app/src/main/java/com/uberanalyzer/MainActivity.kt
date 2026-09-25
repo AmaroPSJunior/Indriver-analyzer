@@ -777,6 +777,17 @@ class MainActivity : ThemedActivity() {
                                 // Draw polyline route ONLY if both pickup and dropoff locations are valid
                                 if (hasPickup && hasDropoff) {
                                     var osrmUrl = 'https://router.project-osrm.org/route/v1/driving/' + r.pLng + ',' + r.pLat + ';' + r.dLng + ',' + r.dLat + '?overview=full&geometries=geojson';
+                                    // Exibe uma linha clicável imediatamente; o traçado OSRM apenas melhora o desenho depois.
+                                    var line = L.polyline([[r.pLat, r.pLng], [r.dLat, r.dLng]], {
+                                        color: color,
+                                        weight: 6,
+                                        opacity: 0.95,
+                                        smoothFactor: 1
+                                    }).addTo(map);
+                                    line.bindTooltip(escapeHtml(fare), {permanent: false, sticky: true}).on('click', selectOriginalRide);
+                                    routeLayers.push(line);
+                                    groupLayers.push(line);
+                                    routeLinesMap[idx] = line;
                                     fetch(osrmUrl)
                                         .then(function(res) { return res.json(); })
                                         .then(function(data) {
@@ -787,31 +798,12 @@ class MainActivity : ThemedActivity() {
                                             } else {
                                                 latlngs = [[r.pLat, r.pLng], [r.dLat, r.dLng]];
                                             }
-                                            var line = L.polyline(latlngs, {
-                                                color: color,
-                                                weight: 6,
-                                                opacity: 0.95,
-                                                smoothFactor: 1
-                                            }).addTo(map);
-
-                                            line.bindTooltip(escapeHtml(fare), {permanent: false, sticky: true}).on('click', selectOriginalRide);
-                                            routeLayers.push(line);
-                                            groupLayers.push(line);
-                                            routeLinesMap[idx] = line;
+                                            line.setLatLngs(latlngs);
                                         })
                                         .catch(function(err) {
                                             if (generation !== mapGeneration) return;
                                             var latlngs = [[r.pLat, r.pLng], [r.dLat, r.dLng]];
-                                            var line = L.polyline(latlngs, {
-                                                color: color,
-                                                weight: 6,
-                                                opacity: 0.95,
-                                                smoothFactor: 1
-                                            }).addTo(map);
-                                            line.bindTooltip(escapeHtml(fare), {permanent: false, sticky: true}).on('click', selectOriginalRide);
-                                            routeLayers.push(line);
-                                            groupLayers.push(line);
-                                            routeLinesMap[idx] = line;
+                                            line.setLatLngs(latlngs);
                                         });
                                 }
                             })(idx);
