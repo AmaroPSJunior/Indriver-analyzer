@@ -144,6 +144,15 @@ const HTML_CONTENT = `<!DOCTYPE html>
                 </div>
             </div>
 
+            <div class="px-3 py-2 bg-slate-900/70 border-b border-slate-800">
+                <label for="address-filter" class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Filtrar viagens em direção ao endereço</label>
+                <div class="flex items-center gap-2">
+                    <input id="address-filter" type="search" oninput="setAddressFilter(this.value)" placeholder="Digite o endereço de destino..." autocomplete="off"
+                        class="min-w-0 flex-1 px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 outline-none focus:border-cyan-400" />
+                    <button onclick="clearAddressFilter()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold shrink-0" title="Limpar filtro">✕</button>
+                </div>
+            </div>
+
             <div id="ride-list" class="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-hide">
                 <!-- Cards will be rendered dynamically -->
             </div>
@@ -486,12 +495,39 @@ const HTML_CONTENT = `<!DOCTYPE html>
         let selectedRideId = null;
         let isSingleRouteMode = false;
         let currentSortMode = 'default';
+        let addressFilter = '';
         let currentRoutes = [];
         let lastFetchedRidesJson = '';
         let currentMapProvider = 'cartoDark'; // 'cartoDark' | 'osm' | 'cartoLight'
         let map;
         let tileLayer;
         let routeLayers = [];
+
+        function normalizeSearchText(value) {
+            return String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().trim();
+        }
+
+        function getVisibleRoutes() {
+            const query = normalizeSearchText(addressFilter);
+            if (!query) return currentRoutes;
+            return currentRoutes.filter((ride) => {
+                const dropoff = ride.dropoff || ride.dropoffAddress || ride.dropoff_address || '';
+                return normalizeSearchText(dropoff).includes(query);
+            });
+        }
+
+        function setAddressFilter(value) {
+            addressFilter = value || '';
+            selectedRideId = getVisibleRoutes().some(r => r.id === selectedRideId) ? selectedRideId : null;
+            renderRideList();
+            drawRoutesOnMap();
+        }
+
+        function clearAddressFilter() {
+            const input = document.getElementById('address-filter');
+            if (input) input.value = '';
+            setAddressFilter('');
+        }
 
         const TILE_PROVIDERS = {
             cartoDark: {
@@ -717,6 +753,8 @@ const HTML_CONTENT = `<!DOCTYPE html>
             pillsEl.innerHTML = '';
             legendEl.innerHTML = '';
 
+            const visibleRoutes = getVisibleRoutes();
+
             if (!currentRoutes || currentRoutes.length === 0) {
                 listEl.innerHTML = \`
                     <div class="flex flex-col items-center justify-center p-8 text-center bg-slate-950/80 rounded-2xl border border-slate-800 m-4">
@@ -735,7 +773,22 @@ const HTML_CONTENT = `<!DOCTYPE html>
                 return;
             }
 
-            const activeRoutes = currentRoutes.slice(0, maxRoutes);
+            if (visibleRoutes.length === 0) {
+                listEl.innerHTML = \`
+                    <div class="flex flex-col items-center justify-center p-8 text-center bg-slate-950/80 rounded-2xl border border-slate-800 m-4">
+                        <div class="text-4xl mb-3">🧭</div>
+                        <h3 class="text-white font-bold text-base mb-1">Nenhuma viagem nessa direção</h3>
+                        <p class="text-slate-400 text-xs leading-relaxed max-w-xs">Nenhum destino corresponde ao endereço selecionado.</p>
+                    </div>
+                \`;
+                document.getElementById('list-title').textContent = 'NENHUMA VIAGEM ENCONTRADA';
+                document.getElementById('routes-badge').textContent = '🔎 FILTRO SEM RESULTADOS';
+                updateSelectedRideBanner();
+                drawRoutesOnMap();
+                return;
+            }
+
+            const activeRoutes = visibleRoutes.slice(0, maxRoutes);
 
             document.getElementById('list-title').textContent = \`FILA NA LISTA (\${activeRoutes.length} DE MÁX \${maxRoutes})\`;
             document.getElementById('routes-badge').textContent = \`✅ CAPTURA ATIVA (\${activeRoutes.length} ROTAS SINCRONIZADAS)\`;
@@ -848,7 +901,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
                 listEl.appendChild(card);
             });
 
-            if (isSingleRouteMode && currentRoutes.length > 1) {
+            if (isSingleRouteMode && visibleRoutes.length > 1) {
                 const bannerBox = document.createElement('div');
                 bannerBox.className = 'p-2.5 bg-cyan-950/80 border border-cyan-500/60 rounded-xl flex items-center justify-between gap-2 mb-2 text-xs text-cyan-200 shadow-lg';
                 bannerBox.innerHTML = [
@@ -867,7 +920,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
         }
 
         function updateSelectedRideBanner() {
-            const activeRoutes = currentRoutes.slice(0, maxRoutes);
+            const activeRoutes = getVisibleRoutes().slice(0, maxRoutes);
             const banner = document.getElementById('selected-ride-banner');
             if (!activeRoutes || activeRoutes.length === 0) {
                 if (banner) banner.classList.add('hidden');
@@ -919,7 +972,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
                 isSingleRouteMode = true;
             }
             renderRideList();
-            const activeRoutes = currentRoutes.slice(0, maxRoutes);
+            const activeRoutes = getVisibleRoutes().slice(0, maxRoutes);
             const target = activeRoutes.find(r => r.id === rideId);
             if (target) {
                 focusRoute(target);
@@ -942,7 +995,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
             routeLayers = [];
 
             const allPoints = [];
-            const activeRoutes = currentRoutes.slice(0, maxRoutes);
+            const activeRoutes = getVisibleRoutes().slice(0, maxRoutes);
 
             let routesToDraw = activeRoutes;
             if (isSingleRouteMode && selectedRideId) {
