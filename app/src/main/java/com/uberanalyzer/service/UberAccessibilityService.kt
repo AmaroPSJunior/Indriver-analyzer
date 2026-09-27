@@ -317,7 +317,8 @@ class UberAccessibilityService : AccessibilityService() {
         rides: List<com.uberanalyzer.model.InDriverRide>,
         isOcrSource: Boolean,
         capturedWindow: android.graphics.Rect? = null,
-        directionFilterAlreadyChecked: Boolean = false
+        directionFilterAlreadyChecked: Boolean = false,
+        directionFilterVerified: Boolean = false
     ): Boolean {
         if (destinationFilterCheckPending && !directionFilterAlreadyChecked) return true
         recentRides = rides
@@ -330,6 +331,7 @@ class UberAccessibilityService : AccessibilityService() {
                 sendBroadcast(Intent("com.uberanalyzer.ACTION_INDRIVE_ROUTE_DETECTED").apply {
                     setPackage(packageName)
                     putExtra("rides_json", "[]")
+                    putExtra("direction_filter_verified", false)
                 })
             }
             return false
@@ -386,7 +388,13 @@ class UberAccessibilityService : AccessibilityService() {
                                 scanHandler.postDelayed({ if (!destroyed) requestImmediateInDriverScan() }, 1500L)
                             }
                         } else {
-                            processInDriverRides(snapshot, isOcrSource, capturedWindow, directionFilterAlreadyChecked = true)
+                            processInDriverRides(
+                                snapshot,
+                                isOcrSource,
+                                capturedWindow,
+                                directionFilterAlreadyChecked = true,
+                                directionFilterVerified = true
+                            )
                         }
                     }
                 }
@@ -398,7 +406,8 @@ class UberAccessibilityService : AccessibilityService() {
         val autoHide = settings.getAutoHideEnabled()
         val maxRoutes = settings.getMaxRoutes()
 
-        val capturedRides = destinationMemory.update(rides, now).take(maxRoutes)
+        val visibleRouteLimit = if (directionFilterEnabled) minOf(maxRoutes, 3) else maxRoutes
+        val capturedRides = destinationMemory.update(rides, now).take(visibleRouteLimit)
         if (capturedRides.isNotEmpty()) {
             lastProcessedTime = now
 
@@ -465,6 +474,10 @@ class UberAccessibilityService : AccessibilityService() {
                 putExtra("rating", bestRide.rating)
                 putExtra("raw_text", bestRide.rawText)
                 putExtra("rides_json", InDriverJsonFormatter.toJsonArray(capturedRides).toString())
+                putExtra("direction_filter_verified", directionFilterEnabled && directionFilterVerified)
+                if (directionFilterEnabled && directionFilterVerified) {
+                    putExtra("direction_filter_address", settings.getSelectedDestinationFilterAddress())
+                }
             }
             sendBroadcast(intent)
             return true

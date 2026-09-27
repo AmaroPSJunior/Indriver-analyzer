@@ -104,7 +104,7 @@ object RideParser {
         val rides = mutableListOf<InDriverRide>()
         var index = 1
 
-        for ((screenIndex, cluster) in cardClusters.withIndex()) {
+        for (cluster in cardClusters) {
             val clusterTexts = cluster.map { it.text.trim() }.filter { it.isNotBlank() }
             val fullBlockText = clusterTexts.joinToString(" | ")
 
@@ -172,7 +172,8 @@ object RideParser {
             val rating = ratingMatch?.groupValues?.get(1)?.replace(",", ".") ?: "4.9"
 
             // YELLOW REGION: Passenger Name (canto superior esquerdo do card)
-            val passengerName = extractPassengerNameFromCluster(cluster) ?: "Passageiro inDrive"
+            val recognizedPassenger = extractPassengerNameFromCluster(cluster)
+            val passengerName = recognizedPassenger ?: "Passageiro inDrive"
 
             // ORANGE REGION: Addresses (Origem e Destino)
             val priceBox = cluster.firstOrNull { extractRidePrices(it.text).isNotEmpty() }?.boundingBox
@@ -188,6 +189,20 @@ object RideParser {
             }
 
             val (pickupAddr, dropoffAddr) = extractAddressesStrict(addressLines, fullBlockText)
+            val hasRecognizedAddress = isRealAddress(pickupAddr) || isRealAddress(dropoffAddr)
+            val hasTripDistance = parsedDistances.any { it > 0.0 }
+            val hasRideAction = Regex("(?i)\\b(oferecer|aceitar|recusar|sugerir)\\b").containsMatchIn(fullBlockText)
+            val hasPassengerCardEvidence = recognizedPassenger != null && (ratingMatch != null || hasRideAction)
+            val isTemporaryUiBlock = Regex(
+                "(?i)\\b(carregando|buscando\\s+(?:corridas|viagens|solicitações)|aguarde|sem\\s+(?:corridas|solicitações)|nenhuma\\s+(?:corrida|viagem|solicitação))\\b"
+            ).containsMatchIn(fullBlockText)
+            val looksLikeRide = hasRecognizedAddress &&
+                (recognizedPassenger != null || (hasTripDistance && (ratingMatch != null || hasRideAction))) ||
+                !hasRecognizedAddress && hasTripDistance && hasPassengerCardEvidence
+
+            // A fare alone can come from transient inDrive UI. Only treat a block as a
+            // queue item when it also has route or passenger/card evidence.
+            if (isTemporaryUiBlock || !looksLikeRide) continue
             if (!includeAddresslessCards && pickupAddr.isBlank() && dropoffAddr.isBlank()) continue
 
             val perKm = explicitPerKm ?: (if (totalKm > 0) price / totalKm else 0.0)
@@ -212,7 +227,7 @@ object RideParser {
                     score = score,
                     paymentMethod = paymentMethod,
                     screenRowY = priceBox?.centerY(),
-                    screenListIndex = screenIndex,
+                    screenListIndex = rides.size,
                     rawText = fullBlockText
                 )
             )
@@ -226,7 +241,7 @@ object RideParser {
 
         return uniqueRides.take(10).mapIndexed { i, ride ->
             val num = i + 1
-            ride.copy(id = "IND-${System.currentTimeMillis() % 100000}-$num")
+            ride.copy(id = "IND-${System.currentTimeMillis() % 100000}-$num", screenListIndex = i)
         }
     }
 

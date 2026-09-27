@@ -68,6 +68,7 @@ class MainActivity : ThemedActivity() {
     private var pendingRoutes: List<RouteData>? = null
     private var currentActiveRoutes: MutableList<RouteData> = mutableListOf()
     private var latestCapturedRoutes: List<RouteData> = emptyList()
+    private var latestRoutesDirectionFilterAddress: String? = null
     private lateinit var settingsManager: com.uberanalyzer.settings.SettingsManager
     private lateinit var autoHideSwitch: androidx.appcompat.widget.SwitchCompat
     private lateinit var destinationDirectionFilterSwitch: androidx.appcompat.widget.SwitchCompat
@@ -109,6 +110,10 @@ class MainActivity : ThemedActivity() {
 
     private val routeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            val directionFilterVerified = intent?.getBooleanExtra("direction_filter_verified", false) == true
+            latestRoutesDirectionFilterAddress = if (directionFilterVerified) {
+                intent?.getStringExtra("direction_filter_address")
+            } else null
             val ridesJsonStr = intent?.getStringExtra("rides_json")
             if (!ridesJsonStr.isNullOrBlank()) {
                 lastDetectedRidesJsonStr = ridesJsonStr
@@ -123,31 +128,32 @@ class MainActivity : ThemedActivity() {
                         val pickup = obj.optString("pickup_address", "").trim()
                         val dropoff = obj.optString("dropoff_address", "").trim()
                         val price = obj.optDouble("price_brl", 0.0)
-                        val dist = obj.optDouble("total_distance_km", 1.0)
+                        val dist = obj.optDouble("total_distance_km", 0.0)
                         val time = obj.optInt("estimated_time_min", 15)
                         val earningsKm = obj.optDouble("earnings_per_km_brl", if (dist > 0) price / dist else 0.0)
                         val score = obj.optDouble("score", 8.5)
                         val passName = obj.optString("passenger", "").trim()
                         val passPhoto = obj.optString("passenger_photo", "")
                         
-                        val isValidName = passName.isNotBlank() && 
-                            !passName.equals("Passageiro", true) && 
-                            !passName.equals("Passageiro inDrive", true) && 
-                            !passName.equals("Passageiro inDriver", true) &&
-                            !passName.contains("Spotify", true) &&
-                            !passName.contains("Waze", true) &&
-                            !passName.contains("Wi-Fi", true) &&
-                            !passName.contains("Wifi", true) &&
-                            !passName.contains("System", true) &&
-                            !passName.contains("Atalho", true)
+                        val invalidPassengerLabel = passName.isBlank() ||
+                            passName.equals("Passageiro", true) ||
+                            passName.equals("Passageiro inDrive", true) ||
+                            passName.equals("Passageiro inDriver", true) ||
+                            passName.contains("Spotify", true) ||
+                            passName.contains("Waze", true) ||
+                            passName.contains("Wi-Fi", true) ||
+                            passName.contains("Wifi", true) ||
+                            passName.contains("System", true) ||
+                            passName.contains("Atalho", true)
+                        val displayPassenger = if (invalidPassengerLabel) "Passageiro inDrive" else passName
 
                         val isValidPickup = com.uberanalyzer.parser.RideParser.isRealAddress(pickup)
                         val isValidDropoff = com.uberanalyzer.parser.RideParser.isRealAddress(dropoff)
 
-                        val hasAnyAddress = isValidPickup || isValidDropoff || dropoff.contains("mapa", true) || pickup.contains("mapa", true)
+                        val hasAnyAddress = isValidPickup || isValidDropoff
 
-                        if (price > 0.0 && dist > 0.0 && isValidName && hasAnyAddress) {
-                            routesList.add(RouteData(pickup, dropoff, price, dist, time, earningsKm, score, passName, passPhoto))
+                        if (price > 0.0 && dist >= 0.0 && dist.isFinite() && hasAnyAddress) {
+                            routesList.add(RouteData(pickup, dropoff, price, dist, time, earningsKm, score, displayPassenger, passPhoto))
                         }
                     }
                 } catch (e: Exception) {
@@ -160,26 +166,32 @@ class MainActivity : ThemedActivity() {
                 val dropoff = intent.getStringExtra("dropoff_address") ?: ""
                 val passName = intent.getStringExtra("passenger") ?: "Passageiro"
                 
-                val isValidName = passName.isNotBlank() && 
-                    !passName.equals("Passageiro", true) && 
-                    !passName.equals("Passageiro inDrive", true) && 
-                    !passName.equals("Passageiro inDriver", true) &&
-                    !passName.contains("Spotify", true) &&
-                    !passName.contains("Waze", true) &&
-                    !passName.contains("Wi-Fi", true)
+                val invalidPassengerLabel = passName.isBlank() ||
+                    passName.equals("Passageiro", true) ||
+                    passName.equals("Passageiro inDrive", true) ||
+                    passName.equals("Passageiro inDriver", true) ||
+                    passName.contains("Spotify", true) ||
+                    passName.contains("Waze", true) ||
+                    passName.contains("Wi-Fi", true) ||
+                    passName.contains("Wifi", true) ||
+                    passName.contains("System", true) ||
+                    passName.contains("Atalho", true)
+                val displayPassenger = if (invalidPassengerLabel) "Passageiro inDrive" else passName
 
                 val isValidPickup = com.uberanalyzer.parser.RideParser.isRealAddress(pickup)
                 val isValidDropoff = com.uberanalyzer.parser.RideParser.isRealAddress(dropoff)
-                val hasAnyAddress = isValidPickup || isValidDropoff || dropoff.contains("mapa", true) || pickup.contains("mapa", true)
+                val hasAnyAddress = isValidPickup || isValidDropoff
 
-                if (isValidName && hasAnyAddress) {
+                if (hasAnyAddress) {
                     val price = intent.getDoubleExtra("price", 0.0)
                     val dist = intent.getDoubleExtra("distance_km", 0.0)
                     val time = intent.getIntExtra("time_min", 0)
                     val earningsKm = intent.getDoubleExtra("earnings_km", if (dist > 0) price / dist else 0.0)
                     val score = intent.getDoubleExtra("score", 8.5)
                     val passPhoto = intent.getStringExtra("passenger_photo") ?: ""
-                    routesList.add(RouteData(pickup, dropoff, price, dist, time, earningsKm, score, passName, passPhoto))
+                    if (price > 0.0 && dist >= 0.0 && dist.isFinite()) {
+                        routesList.add(RouteData(pickup, dropoff, price, dist, time, earningsKm, score, displayPassenger, passPhoto))
+                    }
                 }
             }
 
@@ -1156,6 +1168,7 @@ class MainActivity : ThemedActivity() {
                 settingsManager.setDestinationDirectionFilterEnabled(true)
                 dialog.dismiss()
                 displayRoutesOnMap(latestCapturedRoutes)
+                UberAccessibilityService.triggerScan(this@MainActivity)
                 Toast.makeText(this, "Filtro por endereço ativado", Toast.LENGTH_SHORT).show()
             }
         }
@@ -1175,6 +1188,8 @@ class MainActivity : ThemedActivity() {
         val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
         val directionFilterEnabled = settingsManager.getDestinationDirectionFilterEnabled()
         val selectedAddress = settingsManager.getSelectedDestinationFilterAddress()
+        val directionAlreadyVerified = directionFilterEnabled &&
+            selectedAddress.isNotBlank() && latestRoutesDirectionFilterAddress == selectedAddress
         currentActiveRoutes = if (directionFilterEnabled) mutableListOf() else limitedRoutes.toMutableList()
         titleText.text = getAppVersionName()
 
@@ -1183,7 +1198,7 @@ class MainActivity : ThemedActivity() {
             return
         }
 
-        if (directionFilterEnabled) {
+        if (directionFilterEnabled && !directionAlreadyVerified) {
             routesCardsContainer.removeAllViews()
             routesCardsContainer.addView(TextView(this).apply {
                 text = "⏳ Conferindo origem e destino..."
@@ -1201,11 +1216,11 @@ class MainActivity : ThemedActivity() {
         // Asynchronously resolve real coordinates on background thread
         Thread {
             val jsRoutesArray = JSONArray()
-            val targetCoordinates = if (directionFilterEnabled && selectedAddress.isNotBlank()) {
+            val targetCoordinates = if (directionFilterEnabled && !directionAlreadyVerified && selectedAddress.isNotBlank()) {
                 resolveCoordinates(selectedAddress, false, 0.0, 0)
             } else Pair(0.0, 0.0)
 
-            val visibleRoutes = if (!directionFilterEnabled) {
+            val visibleRoutes = if (!directionFilterEnabled || directionAlreadyVerified) {
                 limitedRoutes
             } else if (targetCoordinates == Pair(0.0, 0.0)) {
                 emptyList()
@@ -1241,7 +1256,9 @@ class MainActivity : ThemedActivity() {
 
 
                 }
-                jsRoutesArray.put(jsObj)
+                if (pLat != 0.0 && pLng != 0.0 && dLat != 0.0 && dLng != 0.0) {
+                    jsRoutesArray.put(jsObj)
+                }
             }
 
             runOnUiThread {
