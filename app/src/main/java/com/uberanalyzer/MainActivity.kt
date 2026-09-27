@@ -67,8 +67,10 @@ class MainActivity : ThemedActivity() {
     private var isMapLoaded = false
     private var pendingRoutes: List<RouteData>? = null
     private var currentActiveRoutes: MutableList<RouteData> = mutableListOf()
+    private var allCapturedRoutes: List<RouteData> = emptyList()
     private lateinit var settingsManager: com.uberanalyzer.settings.SettingsManager
     private lateinit var autoHideSwitch: androidx.appcompat.widget.SwitchCompat
+    private lateinit var destinationFilterSwitch: androidx.appcompat.widget.SwitchCompat
 
     private var userLat: Double? = null
     private var userLng: Double? = null
@@ -181,9 +183,7 @@ class MainActivity : ThemedActivity() {
                 }
             }
 
-            val maxCount = settingsManager.getMaxRoutes()
-            val topRoutes = routesList.take(maxCount)
-            displayRoutesOnMap(topRoutes)
+            displayRoutesOnMap(routesList)
         }
     }
 
@@ -339,6 +339,13 @@ class MainActivity : ThemedActivity() {
             autoHideSwitch.isChecked = isEnabled
             if (isEnabled) UberAccessibilityService.triggerScan(this)
         }
+        if (::destinationFilterSwitch.isInitialized) {
+            val wasEnabled = destinationFilterSwitch.isChecked
+            destinationFilterSwitch.isChecked = settingsManager.getDestinationFilterEnabled()
+            if (wasEnabled == destinationFilterSwitch.isChecked && allCapturedRoutes.isNotEmpty()) {
+                displayRoutesOnMap(allCapturedRoutes)
+            }
+        }
     }
 
     private fun updateStatusView() {
@@ -411,6 +418,17 @@ class MainActivity : ThemedActivity() {
             }
         }
 
+        destinationFilterSwitch = androidx.appcompat.widget.SwitchCompat(this).apply {
+            text = "📍 Endereço"
+            contentDescription = "Ativar ou desativar o filtro de destino"
+            textSize = 11f
+            setTextColor(getColor(R.color.app_text))
+            isChecked = settingsManager.getDestinationFilterEnabled()
+            setPadding(dp(6), dp(2), dp(6), dp(2))
+            layoutParams = LinearLayout.LayoutParams(-2, -2).apply { setMargins(dp(4), 0, 0, 0) }
+            setOnCheckedChangeListener { _, isChecked -> handleDestinationFilterToggle(isChecked) }
+        }
+
         val configButton = Button(this).apply {
             text = "☰"
             contentDescription = "Abrir configurações"
@@ -426,6 +444,7 @@ class MainActivity : ThemedActivity() {
 
         titleRow.addView(titleText)
         titleRow.addView(autoHideSwitch)
+        titleRow.addView(destinationFilterSwitch)
         titleScrollView.addView(titleRow)
         val cardsToggle = Button(this).apply {
             text = if (cardsMinimized) "⌄" else "⌃"
@@ -1042,10 +1061,19 @@ class MainActivity : ThemedActivity() {
 
     private fun displayRoutesOnMap(routes: List<RouteData>) {
         val generation = ++routeRenderGeneration
+        allCapturedRoutes = routes.toList()
         val maxRoutesConfig = settingsManager.getMaxRoutes()
-        val limitedRoutes = routes.take(maxRoutesConfig)
+        val filterEnabled = settingsManager.getDestinationFilterEnabled()
+        val filterQuery = normalizeDestinationQuery(settingsManager.getDestinationFilterQuery())
+        val filteredRoutes = if (filterEnabled && filterQuery.isNotBlank()) {
+            routes.filter { route ->
+                com.uberanalyzer.parser.RideParser.isRealAddress(route.dropoff) &&
+                    normalizeDestinationQuery(route.dropoff).contains(filterQuery)
+            }
+        } else routes
+        val limitedRoutes = filteredRoutes.take(maxRoutesConfig)
         if (!isMapLoaded) {
-            pendingRoutes = limitedRoutes
+            pendingRoutes = routes.toList()
             return
         }
 
@@ -1068,14 +1096,16 @@ class MainActivity : ThemedActivity() {
                     setMargins(0, 0, dp(8), 0)
                 }
             }
+            val noAddressMatches = filterEnabled && filterQuery.isNotBlank() && routes.isNotEmpty()
             val titleWait = TextView(this).apply {
-                text = "🟢 AGUARDANDO SOLICITAÇÕES DO INDRIVE"
+                text = if (noAddressMatches) "📍 NENHUM DESTINO CORRESPONDE AO FILTRO" else "🟢 AGUARDANDO SOLICITAÇÕES DO INDRIVE"
                 setTextColor(getColor(R.color.app_accent))
                 textSize = 12f
                 typeface = Typeface.DEFAULT_BOLD
             }
             val descWait = TextView(this).apply {
-                text = "Abra o aplicativo do inDrive lado a lado. O Leitor de Tela capturará automaticamente as corridas originais e flotará as rotas no mapa em tempo real."
+                text = if (noAddressMatches) "Ajuste o endereço de destino ou desligue o filtro para voltar a ver todas as viagens."
+                    else "Abra o aplicativo do inDrive lado a lado. O Leitor de Tela capturará automaticamente as corridas originais e flotará as rotas no mapa em tempo real."
                 setTextColor(getColor(R.color.app_secondary))
                 textSize = 11f
                 maxLines = 3
@@ -1121,6 +1151,33 @@ class MainActivity : ThemedActivity() {
                 if (generation == routeRenderGeneration) renderCardsAndMapUi(limitedRoutes, jsRoutesArray)
             }
         }.start()
+    }
+
+    private fun normalizeDestinationQuery(value: String): String =
+        java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFD)
+            .replace("\\p{Mn}+".toRegex(), "")
+            .lowercase(Locale.ROOT)
+            .trim()
+
+    private fun applyDestinationFilterToggle(enabled: Boolean) {
+        settingsManager.setDestinationFilterEnabled(enabled)
+        displayRoutesOnMap(allCapturedRoutes)
+        Toast.makeText(
+            this,
+            if (enabled) "📍 Filtro por endereço ativado" else "📍 Filtro por endereço desativado",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    private fun handleDestinationFilterToggle(enabled: Boolean) {
+        if (enabled && settingsManager.getDestinationFilterQuery().isBlank()) {
+            destinationFilterSwitch.setOnCheckedChangeListener(null)
+            destinationFilterSwitch.isChecked = false
+            destinationFilterSwitch.setOnCheckedChangeListener { _, checked -> handleDestinationFilterToggle(checked) }
+            Toast.makeText(this, "Informe o endereço de destino nas configurações.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        applyDestinationFilterToggle(enabled)
     }
 
     fun hideTopRideAndCascade(rideIndex: Int = 0) {
@@ -1741,6 +1798,33 @@ class MainActivity : ThemedActivity() {
         }
         dialogView.addView(showMetricsCheck)
 
+        val destinationFilterLabel = TextView(this).apply {
+            text = "📍 Endereço de destino para filtrar"
+            textSize = 13f
+            setTextColor(getColor(R.color.app_text))
+            setPadding(0, dp(10), 0, dp(4))
+        }
+        dialogView.addView(destinationFilterLabel)
+
+        val destinationFilterInput = EditText(this).apply {
+            setText(settingsManager.getDestinationFilterQuery())
+            hint = "Ex.: Centro, Campinas"
+            setTextColor(getColor(R.color.app_text))
+            setHintTextColor(getColor(R.color.app_secondary))
+            setBackgroundColor(getColor(R.color.app_surface))
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(4)) }
+        }
+        dialogView.addView(destinationFilterInput)
+
+        dialogView.addView(TextView(this).apply {
+            text = "Use a chave 📍 Endereço no topo do mapa para mostrar apenas destinos que contenham esse texto."
+            textSize = 11f
+            setTextColor(getColor(R.color.app_secondary))
+            setPadding(0, 0, 0, dp(6))
+        })
+
         // --- Seção: Meta de Valor/KM e Confirmação ao Ocultar ---
         val kmLabel = TextView(this).apply {
             text = "💰 REGRAS DE VALOR MÍNIMO E OCULTAÇÃO"
@@ -1814,6 +1898,10 @@ class MainActivity : ThemedActivity() {
                 settingsManager.setShowPassengerPhoto(showPhotoCheck.isChecked)
                 settingsManager.setShowPassengerName(showNameCheck.isChecked)
                 settingsManager.setShowRouteMetrics(showMetricsCheck.isChecked)
+                settingsManager.setDestinationFilterQuery(destinationFilterInput.text.toString())
+                if (settingsManager.getDestinationFilterQuery().isBlank() && ::destinationFilterSwitch.isInitialized) {
+                    destinationFilterSwitch.isChecked = false
+                }
                 settingsManager.setAutoHideEnabled(autoHideCheck.isChecked)
                 if (::autoHideSwitch.isInitialized) {
                     autoHideSwitch.isChecked = autoHideCheck.isChecked
@@ -1825,7 +1913,7 @@ class MainActivity : ThemedActivity() {
                 settingsManager.setHighProfitAlertKm(parsedHighProfit)
                 settingsManager.setConfirmHideBelowMinKm(confirmHideCheck.isChecked)
 
-                displayRoutesOnMap(pendingRoutes ?: currentActiveRoutes.toList())
+                displayRoutesOnMap(allCapturedRoutes)
 
                 UberAccessibilityService.triggerScan(this@MainActivity)
             }

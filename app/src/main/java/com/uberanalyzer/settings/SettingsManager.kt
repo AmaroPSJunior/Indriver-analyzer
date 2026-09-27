@@ -33,6 +33,8 @@ class SettingsManager(context: Context) {
         const val KEY_SHOW_PASSENGER_PHOTO = "show_passenger_photo"
         const val KEY_SHOW_PASSENGER_NAME = "show_passenger_name"
         const val KEY_SHOW_ROUTE_METRICS = "show_route_metrics"
+        const val KEY_DESTINATION_FILTER_ENABLED = "destination_filter_enabled"
+        const val KEY_DESTINATION_FILTER_QUERY = "destination_filter_query"
         const val KEY_MAP_INTEREST_POINTS = "map_interest_points"
 
         // Defaults
@@ -90,6 +92,11 @@ class SettingsManager(context: Context) {
 
     fun getShowRouteMetrics(): Boolean = prefs.getBoolean(KEY_SHOW_ROUTE_METRICS, true)
     fun setShowRouteMetrics(value: Boolean) = prefs.edit().putBoolean(KEY_SHOW_ROUTE_METRICS, value).apply()
+
+    fun getDestinationFilterEnabled(): Boolean = prefs.getBoolean(KEY_DESTINATION_FILTER_ENABLED, false)
+    fun setDestinationFilterEnabled(value: Boolean) = prefs.edit().putBoolean(KEY_DESTINATION_FILTER_ENABLED, value).apply()
+    fun getDestinationFilterQuery(): String = prefs.getString(KEY_DESTINATION_FILTER_QUERY, "") ?: ""
+    fun setDestinationFilterQuery(value: String) = prefs.edit().putString(KEY_DESTINATION_FILTER_QUERY, value.trim()).apply()
 
     fun syncMapInterestPoints() = Unit
 

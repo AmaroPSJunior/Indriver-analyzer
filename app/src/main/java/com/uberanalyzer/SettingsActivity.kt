@@ -58,6 +58,22 @@ class SettingsActivity : ThemedActivity() {
         }
         root.addView(autoHideCheck)
 
+        val destinationFilterSwitch = androidx.appcompat.widget.SwitchCompat(this).apply {
+            text = "📍 Filtrar viagens pelo endereço de destino"
+            setTextColor(getColor(R.color.app_text))
+            textSize = 14f
+            isChecked = settings.getDestinationFilterEnabled()
+            setPadding(0, dp(6), 0, dp(4))
+        }
+        root.addView(destinationFilterSwitch)
+
+        root.addView(createLabel("Endereço ou trecho do destino"))
+        val destinationFilterInput = createEditText(
+            settings.getDestinationFilterQuery(),
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+        ).apply { hint = "Ex.: Centro, Campinas" }
+        root.addView(destinationFilterInput)
+
         val confirmHideCheck = CheckBox(this).apply {
             text = "Pedir confirmação ao ocultar manualmente viagens com valor R$/km abaixo da meta"
             setTextColor(getColor(R.color.app_text))
@@ -98,6 +114,8 @@ class SettingsActivity : ThemedActivity() {
             setOnClickListener {
                 settings.setMinKmValue(kmInput.text.toString().toFloatOrNull() ?: 2.0f)
                 settings.setAutoHideEnabled(autoHideCheck.isChecked)
+                settings.setDestinationFilterEnabled(destinationFilterSwitch.isChecked && destinationFilterInput.text.isNotBlank())
+                settings.setDestinationFilterQuery(destinationFilterInput.text.toString())
                 settings.setConfirmHideBelowMinKm(confirmHideCheck.isChecked)
                 settings.setMinHourValue(hourInput.text.toString().toFloatOrNull() ?: 45.0f)
                 settings.setHighProfitAlertKm(highProfitInput.text.toString().toFloatOrNull() ?: 4.0f)
