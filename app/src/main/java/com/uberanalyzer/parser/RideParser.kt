@@ -196,8 +196,7 @@ object RideParser {
             val isTemporaryUiBlock = Regex(
                 "(?i)\\b(carregando|buscando\\s+(?:corridas|viagens|solicitações)|aguarde|sem\\s+(?:corridas|solicitações)|nenhuma\\s+(?:corrida|viagem|solicitação))\\b"
             ).containsMatchIn(fullBlockText)
-            val looksLikeRide = hasRecognizedAddress &&
-                (recognizedPassenger != null || (hasTripDistance && (ratingMatch != null || hasRideAction))) ||
+            val looksLikeRide = hasRecognizedAddress && (hasTripDistance || recognizedPassenger != null || ratingMatch != null || hasRideAction) ||
                 !hasRecognizedAddress && hasTripDistance && hasPassengerCardEvidence
 
             // A fare alone can come from transient inDrive UI. Only treat a block as a

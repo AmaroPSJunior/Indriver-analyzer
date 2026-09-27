@@ -343,11 +343,6 @@ class UberAccessibilityService : AccessibilityService() {
         val settings = com.uberanalyzer.settings.SettingsManager(this)
         val directionFilterEnabled = settings.getDestinationDirectionFilterEnabled()
         if (directionFilterEnabled && !directionFilterAlreadyChecked && pendingSelection == null && !gesturePending) {
-            val firstPositionedRide = rides.any { it.screenListIndex == 0 && it.screenRowY != null }
-            if (capturedWindow == null || !firstPositionedRide) {
-                sendDebugLog("⚠️ Filtro por endereço aguardando captura espacial para deslizar a corrida certa.")
-                return true
-            }
             if (!destinationFilterCheckPending) {
                 destinationFilterCheckPending = true
                 val snapshot = rides
@@ -378,15 +373,30 @@ class UberAccessibilityService : AccessibilityService() {
                         if (!check.targetResolved) {
                             sendDebugLog("⚠️ Não foi possível localizar o endereço do filtro; nenhuma corrida foi removida.")
                             processInDriverRides(snapshot, isOcrSource, capturedWindow, directionFilterAlreadyChecked = true)
-                        } else if (!check.canInspectFirstThree) {
-                            sendDebugLog("⚠️ Captura sem posições confiáveis; o filtro aguardará uma nova leitura.")
-                            requestImmediateInDriverScan()
                         } else if (check.invalidScreenIndex != null) {
                             val rejectedNumber = check.invalidScreenIndex + 1
                             sendDebugLog("📍 Corrida $rejectedNumber fora da direção selecionada; deslizando para removê-la.")
                             if (!performSwipeHideItem(check.invalidScreenIndex, automatic = true, addressFilter = true)) {
+                                val mapRides = snapshot.filterNot { it.id in check.invalidRideIds }
+                                processInDriverRides(
+                                    mapRides,
+                                    isOcrSource,
+                                    capturedWindow,
+                                    directionFilterAlreadyChecked = true,
+                                    directionFilterVerified = true
+                                )
                                 scanHandler.postDelayed({ if (!destroyed) requestImmediateInDriverScan() }, 1500L)
                             }
+                        } else if (check.invalidRideIds.isNotEmpty()) {
+                            sendDebugLog("📍 Corridas fora da direção removidas da lista do mapa; aguardando posição de tela para deslizar com segurança.")
+                            val mapRides = snapshot.filterNot { it.id in check.invalidRideIds }
+                            processInDriverRides(
+                                mapRides,
+                                isOcrSource,
+                                capturedWindow,
+                                directionFilterAlreadyChecked = true,
+                                directionFilterVerified = true
+                            )
                         } else {
                             processInDriverRides(
                                 snapshot,
@@ -487,7 +497,7 @@ class UberAccessibilityService : AccessibilityService() {
 
     private data class DestinationDirectionCheck(
         val targetResolved: Boolean,
-        val canInspectFirstThree: Boolean,
+        val invalidRideIds: Set<String> = emptySet(),
         val invalidScreenIndex: Int? = null
     )
 
@@ -496,30 +506,35 @@ class UberAccessibilityService : AccessibilityService() {
         selectedAddress: String
     ): DestinationDirectionCheck {
         val target = resolveDirectionFilterCoordinates(selectedAddress)
-            ?: return DestinationDirectionCheck(targetResolved = false, canInspectFirstThree = false)
+            ?: return DestinationDirectionCheck(targetResolved = false)
 
-        val firstRide = rides.firstOrNull { it.screenListIndex == 0 && it.screenRowY != null }
-            ?: return DestinationDirectionCheck(targetResolved = true, canInspectFirstThree = false)
-
-        for (screenIndex in 0..2) {
-            val ride = rides.firstOrNull { it.screenListIndex == screenIndex } ?: break
-            if (ride.screenRowY == null) {
-                return DestinationDirectionCheck(targetResolved = true, canInspectFirstThree = false)
-            }
+        val invalidIds = linkedSetOf<String>()
+        var firstInvalidScreenIndex: Int? = null
+        for ((position, ride) in rides.take(3).withIndex()) {
+            val screenIndex = ride.screenListIndex ?: position
+            var invalid = false
             if (!RideParser.isRealAddress(ride.pickupAddress) || !RideParser.isRealAddress(ride.dropoffAddress)) {
-                return DestinationDirectionCheck(targetResolved = true, canInspectFirstThree = true, invalidScreenIndex = screenIndex)
+                invalid = true
+            } else {
+                val origin = resolveDirectionFilterCoordinates(ride.pickupAddress)
+                val destination = resolveDirectionFilterCoordinates(ride.dropoffAddress)
+                if (origin == null || destination == null ||
+                    distanceBetweenCoordinates(destination, target) >= distanceBetweenCoordinates(origin, target)) {
+                    invalid = true
+                }
             }
-
-            val origin = resolveDirectionFilterCoordinates(ride.pickupAddress)
-                ?: return DestinationDirectionCheck(targetResolved = true, canInspectFirstThree = true, invalidScreenIndex = screenIndex)
-            val destination = resolveDirectionFilterCoordinates(ride.dropoffAddress)
-                ?: return DestinationDirectionCheck(targetResolved = true, canInspectFirstThree = true, invalidScreenIndex = screenIndex)
-
-            if (distanceBetweenCoordinates(destination, target) >= distanceBetweenCoordinates(origin, target)) {
-                return DestinationDirectionCheck(targetResolved = true, canInspectFirstThree = true, invalidScreenIndex = screenIndex)
+            if (invalid) {
+                invalidIds.add(ride.id)
+                if (invalidIds.size == 1 && ride.screenRowY != null && screenIndex in 0..2) {
+                    firstInvalidScreenIndex = screenIndex
+                }
             }
         }
-        return DestinationDirectionCheck(targetResolved = true, canInspectFirstThree = true)
+        return DestinationDirectionCheck(
+            targetResolved = true,
+            invalidRideIds = invalidIds,
+            invalidScreenIndex = firstInvalidScreenIndex
+        )
     }
 
     private fun resolveDirectionFilterCoordinates(address: String): Pair<Double, Double>? {
