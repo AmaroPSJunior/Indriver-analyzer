@@ -7,12 +7,20 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.uberanalyzer.model.InDriverJsonFormatter
 import com.uberanalyzer.parser.RideParser
+import android.location.Geocoder
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
 class UberAccessibilityService : AccessibilityService() {
     
     private val destinationMemory = com.uberanalyzer.parser.RideDestinationMemory()
     private val executor = Executors.newSingleThreadExecutor()
+    private val destinationFilterExecutor = Executors.newSingleThreadExecutor()
+    private val destinationCoordinateCache = ConcurrentHashMap<String, Pair<Double, Double>>()
     @Volatile
     private var isTaskPending = false
     private var lastScanTime = 0L
@@ -25,6 +33,7 @@ class UberAccessibilityService : AccessibilityService() {
     private val scanHandler = android.os.Handler(android.os.Looper.getMainLooper())
     @Volatile private var destroyed = false
     @Volatile private var gesturePending = false
+    @Volatile private var destinationFilterCheckPending = false
     @Volatile private var nextScanAfter = 0L
     private data class SelectionRequest(
         val identity: RideSelection.Identity,
@@ -102,7 +111,8 @@ class UberAccessibilityService : AccessibilityService() {
     private val autoHideMonitor = object : Runnable {
         override fun run() {
             if (destroyed) return
-            if (pendingSelection != null || com.uberanalyzer.settings.SettingsManager(this@UberAccessibilityService).getAutoHideEnabled()) {
+            val settings = com.uberanalyzer.settings.SettingsManager(this@UberAccessibilityService)
+            if (pendingSelection != null || settings.getAutoHideEnabled() || settings.getDestinationDirectionFilterEnabled()) {
                 requestImmediateInDriverScan()
             }
             scanHandler.postDelayed(this, 1800L)
@@ -171,7 +181,12 @@ class UberAccessibilityService : AccessibilityService() {
 
                             // 1. Tenta parsing por agrupamento espacial de Bounding Boxes (ML Kit Lines)
                             run {
-                                val spatialRides = RideParser.parseInDriverSpatialLines(rideLines, fullImage)
+                                val spatialRides = RideParser.parseInDriverSpatialLines(
+                                    rideLines,
+                                    fullImage,
+                                    com.uberanalyzer.settings.SettingsManager(this@UberAccessibilityService)
+                                        .getDestinationDirectionFilterEnabled()
+                                )
                                 // Shadow trial: explicitly calibrated debug builds only; never changes live rides.
                                 if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0 && fullImage != null) {
                                     try {
@@ -282,7 +297,10 @@ class UberAccessibilityService : AccessibilityService() {
             val bounds = findRideWindowBounds() ?: return
             val visible = capturedLines.filter { it.boundingBox?.let(bounds::contains) == true }
                 .distinctBy { "${it.text}:${it.boundingBox}" }
-            val rides = RideParser.parseInDriverSpatialLines(visible)
+            val rides = RideParser.parseInDriverSpatialLines(
+                visible,
+                includeAddresslessCards = com.uberanalyzer.settings.SettingsManager(this).getDestinationDirectionFilterEnabled()
+            )
             processInDriverRides(rides, isOcrSource = false, capturedWindow = bounds)
 
         } catch (e: Exception) {
@@ -298,18 +316,84 @@ class UberAccessibilityService : AccessibilityService() {
     private fun processInDriverRides(
         rides: List<com.uberanalyzer.model.InDriverRide>,
         isOcrSource: Boolean,
-        capturedWindow: android.graphics.Rect? = null
+        capturedWindow: android.graphics.Rect? = null,
+        directionFilterAlreadyChecked: Boolean = false
     ): Boolean {
+        if (destinationFilterCheckPending && !directionFilterAlreadyChecked) return true
         recentRides = rides
         recentWindow = capturedWindow?.let { android.graphics.Rect(it) }
         capturedAt = scanStartedAt
         tryOpenRequestedRide(rides, capturedWindow)
-        if (rides.isEmpty()) { destinationMemory.update(emptyList(), System.currentTimeMillis()); return false }
+        if (rides.isEmpty()) {
+            destinationMemory.update(emptyList(), System.currentTimeMillis())
+            if (com.uberanalyzer.settings.SettingsManager(this).getDestinationDirectionFilterEnabled()) {
+                sendBroadcast(Intent("com.uberanalyzer.ACTION_INDRIVE_ROUTE_DETECTED").apply {
+                    setPackage(packageName)
+                    putExtra("rides_json", "[]")
+                })
+            }
+            return false
+        }
 
         val now = System.currentTimeMillis()
-        if (now - lastProcessedTime < 600) return false // Cooldown between overlay updates
+        if (!directionFilterAlreadyChecked && now - lastProcessedTime < 600) return false // Cooldown between overlay updates
         
         val settings = com.uberanalyzer.settings.SettingsManager(this)
+        val directionFilterEnabled = settings.getDestinationDirectionFilterEnabled()
+        if (directionFilterEnabled && !directionFilterAlreadyChecked && pendingSelection == null && !gesturePending) {
+            val firstPositionedRide = rides.any { it.screenListIndex == 0 && it.screenRowY != null }
+            if (capturedWindow == null || !firstPositionedRide) {
+                sendDebugLog("⚠️ Filtro por endereço aguardando captura espacial para deslizar a corrida certa.")
+                return true
+            }
+            if (!destinationFilterCheckPending) {
+                destinationFilterCheckPending = true
+                val snapshot = rides
+                val targetAddress = settings.getSelectedDestinationFilterAddress()
+                destinationFilterExecutor.execute {
+                    val check = checkFirstThreeRidesDirection(snapshot, targetAddress)
+                    scanHandler.post {
+                        destinationFilterCheckPending = false
+                        if (destroyed) return@post
+
+                        val currentSettings = com.uberanalyzer.settings.SettingsManager(this)
+                        if (pendingSelection != null || gesturePending) {
+                            requestImmediateInDriverScan()
+                            return@post
+                        }
+                        if (recentRides !== snapshot) {
+                            requestImmediateInDriverScan()
+                            return@post
+                        }
+                        if (!currentSettings.getDestinationDirectionFilterEnabled()) {
+                            processInDriverRides(snapshot, isOcrSource, capturedWindow, directionFilterAlreadyChecked = true)
+                            return@post
+                        }
+                        if (currentSettings.getSelectedDestinationFilterAddress() != targetAddress) {
+                            requestImmediateInDriverScan()
+                            return@post
+                        }
+                        if (!check.targetResolved) {
+                            sendDebugLog("⚠️ Não foi possível localizar o endereço do filtro; nenhuma corrida foi removida.")
+                            processInDriverRides(snapshot, isOcrSource, capturedWindow, directionFilterAlreadyChecked = true)
+                        } else if (!check.canInspectFirstThree) {
+                            sendDebugLog("⚠️ Captura sem posições confiáveis; o filtro aguardará uma nova leitura.")
+                            requestImmediateInDriverScan()
+                        } else if (check.invalidScreenIndex != null) {
+                            val rejectedNumber = check.invalidScreenIndex + 1
+                            sendDebugLog("📍 Corrida $rejectedNumber fora da direção selecionada; deslizando para removê-la.")
+                            if (!performSwipeHideItem(check.invalidScreenIndex, automatic = true, addressFilter = true)) {
+                                scanHandler.postDelayed({ if (!destroyed) requestImmediateInDriverScan() }, 1500L)
+                            }
+                        } else {
+                            processInDriverRides(snapshot, isOcrSource, capturedWindow, directionFilterAlreadyChecked = true)
+                        }
+                    }
+                }
+            }
+            return true
+        }
+
         val minKm = settings.getMinKmValue().toDouble()
         val autoHide = settings.getAutoHideEnabled()
         val maxRoutes = settings.getMaxRoutes()
@@ -388,6 +472,119 @@ class UberAccessibilityService : AccessibilityService() {
         return false
     }
 
+    private data class DestinationDirectionCheck(
+        val targetResolved: Boolean,
+        val canInspectFirstThree: Boolean,
+        val invalidScreenIndex: Int? = null
+    )
+
+    private fun checkFirstThreeRidesDirection(
+        rides: List<com.uberanalyzer.model.InDriverRide>,
+        selectedAddress: String
+    ): DestinationDirectionCheck {
+        val target = resolveDirectionFilterCoordinates(selectedAddress)
+            ?: return DestinationDirectionCheck(targetResolved = false, canInspectFirstThree = false)
+
+        val firstRide = rides.firstOrNull { it.screenListIndex == 0 && it.screenRowY != null }
+            ?: return DestinationDirectionCheck(targetResolved = true, canInspectFirstThree = false)
+
+        for (screenIndex in 0..2) {
+            val ride = rides.firstOrNull { it.screenListIndex == screenIndex } ?: break
+            if (ride.screenRowY == null) {
+                return DestinationDirectionCheck(targetResolved = true, canInspectFirstThree = false)
+            }
+            if (!RideParser.isRealAddress(ride.pickupAddress) || !RideParser.isRealAddress(ride.dropoffAddress)) {
+                return DestinationDirectionCheck(targetResolved = true, canInspectFirstThree = true, invalidScreenIndex = screenIndex)
+            }
+
+            val origin = resolveDirectionFilterCoordinates(ride.pickupAddress)
+                ?: return DestinationDirectionCheck(targetResolved = true, canInspectFirstThree = true, invalidScreenIndex = screenIndex)
+            val destination = resolveDirectionFilterCoordinates(ride.dropoffAddress)
+                ?: return DestinationDirectionCheck(targetResolved = true, canInspectFirstThree = true, invalidScreenIndex = screenIndex)
+
+            if (distanceBetweenCoordinates(destination, target) >= distanceBetweenCoordinates(origin, target)) {
+                return DestinationDirectionCheck(targetResolved = true, canInspectFirstThree = true, invalidScreenIndex = screenIndex)
+            }
+        }
+        return DestinationDirectionCheck(targetResolved = true, canInspectFirstThree = true)
+    }
+
+    private fun resolveDirectionFilterCoordinates(address: String): Pair<Double, Double>? {
+        if (!RideParser.isRealAddress(address)) return null
+        val query = cleanDirectionFilterAddress(address)
+        if (query.isBlank()) return null
+        destinationCoordinateCache[query]?.let { cached ->
+            return cached.takeUnless { it == Pair(0.0, 0.0) }
+        }
+
+        var resolved: Pair<Double, Double>? = null
+        try {
+            if (Geocoder.isPresent()) {
+                @Suppress("DEPRECATION")
+                val result = Geocoder(this, Locale("pt", "BR")).getFromLocationName(query, 1)
+                if (!result.isNullOrEmpty()) resolved = Pair(result[0].latitude, result[0].longitude)
+            }
+        } catch (e: Exception) {
+            Log.w("UberAccessibility", "Geocoder não resolveu endereço do filtro: ${e.message}")
+        }
+
+        if (resolved == null) {
+            var connection: HttpURLConnection? = null
+            try {
+                val encoded = URLEncoder.encode(query, "UTF-8")
+                connection = (URL("https://nominatim.openstreetmap.org/search?format=json&q=$encoded&limit=1&countrycodes=br")
+                    .openConnection() as HttpURLConnection).apply {
+                    setRequestProperty("User-Agent", "inDriveAnalyzer1.0 (Android)")
+                    connectTimeout = 3000
+                    readTimeout = 3000
+                }
+                if (connection.responseCode == 200) {
+                    val results = org.json.JSONArray(connection.inputStream.bufferedReader().use { it.readText() })
+                    if (results.length() > 0) {
+                        val item = results.getJSONObject(0)
+                        resolved = Pair(item.getDouble("lat"), item.getDouble("lon"))
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("UberAccessibility", "Nominatim não resolveu endereço do filtro: ${e.message}")
+            } finally {
+                connection?.disconnect()
+            }
+        }
+
+        destinationCoordinateCache[query] = resolved ?: Pair(0.0, 0.0)
+        return resolved
+    }
+
+    private fun cleanDirectionFilterAddress(rawAddress: String): String {
+        var clean = rawAddress.trim()
+            .replace(Regex("#[0-9A-Za-z\\-!#]+"), "")
+            .replace(Regex("(?i)district\\s+of\\s+[a-zA-Z0-9\\s\\-!#]+"), "")
+            .replace("(", ", ").replace(")", ", ").replace("-", ", ").replace("#", "")
+        val parts = clean.split(",").map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("R$") }
+        clean = parts.distinct().joinToString(", ")
+        if (clean.isBlank()) return ""
+        if (!clean.contains("São Paulo", ignoreCase = true) && !clean.contains("SP", ignoreCase = true)) {
+            clean += ", São Paulo, SP, Brasil"
+        } else if (!clean.contains("Brasil", ignoreCase = true)) {
+            clean += ", Brasil"
+        }
+        return clean
+    }
+
+    private fun distanceBetweenCoordinates(first: Pair<Double, Double>, second: Pair<Double, Double>): Double {
+        val earthRadiusMeters = 6_371_000.0
+        val firstLatitude = Math.toRadians(first.first)
+        val secondLatitude = Math.toRadians(second.first)
+        val latitudeDelta = Math.toRadians(second.first - first.first)
+        val longitudeDelta = Math.toRadians(second.second - first.second)
+        val sinLat = kotlin.math.sin(latitudeDelta / 2)
+        val sinLon = kotlin.math.sin(longitudeDelta / 2)
+        val a = (sinLat * sinLat + kotlin.math.cos(firstLatitude) * kotlin.math.cos(secondLatitude) * sinLon * sinLon)
+            .coerceIn(0.0, 1.0)
+        return earthRadiusMeters * 2 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1.0 - a))
+    }
+
     private fun collectPositionedText(
         node: AccessibilityNodeInfo,
         lines: MutableList<com.uberanalyzer.ocr.MlKitScreenOcrEngine.OcrLine>
@@ -427,9 +624,11 @@ class UberAccessibilityService : AccessibilityService() {
      * Executes a left-to-right swipe gesture on a specific item (index 0, 1, or 2) in the inDrive list to hide/dismiss the trip
      */
     @Synchronized
-    fun performSwipeHideItem(itemIndex: Int = 0, automatic: Boolean = false): Boolean {
-        if (automatic && recentRides.size <= 1) return false
+    fun performSwipeHideItem(itemIndex: Int = 0, automatic: Boolean = false, addressFilter: Boolean = false): Boolean {
+        if (automatic && recentRides.size <= 1 && !addressFilter) return false
         if (destroyed || pendingSelection != null || itemIndex < 0 || (automatic && itemIndex > 2) || gesturePending || android.os.SystemClock.elapsedRealtime() < nextScanAfter) return false
+        val settings = com.uberanalyzer.settings.SettingsManager(this)
+        if (addressFilter && !settings.getDestinationDirectionFilterEnabled()) return false
         val rideWindow = findRideWindowBounds() ?: return false
         if (rideWindow != recentWindow) return false
         val ride = if (automatic) recentRides.firstOrNull { it.screenListIndex == itemIndex }
@@ -438,7 +637,7 @@ class UberAccessibilityService : AccessibilityService() {
             SwipeTarget.Window(rideWindow.left, rideWindow.top, rideWindow.right, rideWindow.bottom),
             ride?.screenRowY, capturedAt, android.os.SystemClock.elapsedRealtime()
         ) ?: return false
-        if (automatic && !com.uberanalyzer.settings.SettingsManager(this).getAutoHideEnabled()) return false
+        if (automatic && !addressFilter && !settings.getAutoHideEnabled()) return false
         gesturePending = true
         return try {
             val startX = target.startX
@@ -489,7 +688,7 @@ class UberAccessibilityService : AccessibilityService() {
     @Synchronized
     fun requestImmediateInDriverScan() {
         val now = System.currentTimeMillis()
-        if (destroyed || gesturePending || android.os.SystemClock.elapsedRealtime() < nextScanAfter || isTaskPending || (now - lastScanTime < 1500)) return
+        if (destroyed || gesturePending || destinationFilterCheckPending || android.os.SystemClock.elapsedRealtime() < nextScanAfter || isTaskPending || (now - lastScanTime < 1500)) return
         lastScanTime = now
         isTaskPending = true
         scanStartedAt = android.os.SystemClock.elapsedRealtime()
@@ -527,6 +726,7 @@ class UberAccessibilityService : AccessibilityService() {
         pendingSelection = null
         scanHandler.removeCallbacksAndMessages(null)
         executor.shutdownNow()
+        destinationFilterExecutor.shutdownNow()
         super.onDestroy()
         try {
             unregisterReceiver(hideTripReceiver)

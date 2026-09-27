@@ -67,7 +67,8 @@ object RideParser {
      */
     fun parseInDriverSpatialLines(
         lines: List<com.uberanalyzer.ocr.MlKitScreenOcrEngine.OcrLine>,
-        fullBitmap: android.graphics.Bitmap? = null
+        fullBitmap: android.graphics.Bitmap? = null,
+        includeAddresslessCards: Boolean = false
     ): List<InDriverRide> {
         if (lines.isEmpty()) return emptyList()
 
@@ -187,7 +188,7 @@ object RideParser {
             }
 
             val (pickupAddr, dropoffAddr) = extractAddressesStrict(addressLines, fullBlockText)
-            if (pickupAddr.isBlank() && dropoffAddr.isBlank()) continue
+            if (!includeAddresslessCards && pickupAddr.isBlank() && dropoffAddr.isBlank()) continue
 
             val perKm = explicitPerKm ?: (if (totalKm > 0) price / totalKm else 0.0)
             val perHour = if (timeMin > 0) price / (timeMin / 60.0) else 0.0
