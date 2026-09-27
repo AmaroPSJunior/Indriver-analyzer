@@ -376,8 +376,9 @@ class UberAccessibilityService : AccessibilityService() {
                         } else if (check.invalidScreenIndex != null) {
                             val rejectedNumber = check.invalidScreenIndex + 1
                             sendDebugLog("📍 Corrida $rejectedNumber fora da direção selecionada; deslizando para removê-la.")
-                            if (!performSwipeHideItem(check.invalidScreenIndex, automatic = true, addressFilter = true)) {
-                                val mapRides = snapshot.filterNot { it.id in check.invalidRideIds }
+                            val swipeStarted = performSwipeHideItem(check.invalidScreenIndex, automatic = true, addressFilter = true)
+                            val mapRides = snapshot.take(3).filterNot { it.id in check.invalidRideIds }
+                            if (mapRides.isNotEmpty()) {
                                 processInDriverRides(
                                     mapRides,
                                     isOcrSource,
@@ -385,11 +386,13 @@ class UberAccessibilityService : AccessibilityService() {
                                     directionFilterAlreadyChecked = true,
                                     directionFilterVerified = true
                                 )
+                            }
+                            if (!swipeStarted) {
                                 scanHandler.postDelayed({ if (!destroyed) requestImmediateInDriverScan() }, 1500L)
                             }
                         } else if (check.invalidRideIds.isNotEmpty()) {
                             sendDebugLog("📍 Corridas fora da direção removidas da lista do mapa; aguardando posição de tela para deslizar com segurança.")
-                            val mapRides = snapshot.filterNot { it.id in check.invalidRideIds }
+                            val mapRides = snapshot.take(3).filterNot { it.id in check.invalidRideIds }
                             processInDriverRides(
                                 mapRides,
                                 isOcrSource,
