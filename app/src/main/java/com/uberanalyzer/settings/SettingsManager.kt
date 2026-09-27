@@ -15,6 +15,8 @@ class SettingsManager(context: Context) {
         const val KEY_HIGH_PROFIT_ALERT_KM_VALUE = "high_profit_alert_km_value"
         const val KEY_CONFIRM_HIDE_BELOW_MIN_KM = "confirm_hide_below_min_km"
         const val KEY_AUTO_HIDE_ENABLED = "auto_hide_enabled"
+        const val KEY_DESTINATION_DIRECTION_FILTER_ENABLED = "destination_direction_filter_enabled"
+        const val KEY_SELECTED_DESTINATION_FILTER_ADDRESS = "selected_destination_filter_address"
         
         // Category Colors
         const val KEY_COLOR_UBER_X = "color_uber_x"
@@ -75,6 +77,13 @@ class SettingsManager(context: Context) {
 
     fun getAutoHideEnabled(): Boolean = prefs.getBoolean(KEY_AUTO_HIDE_ENABLED, false)
     fun setAutoHideEnabled(value: Boolean) = prefs.edit().putBoolean(KEY_AUTO_HIDE_ENABLED, value).apply()
+
+    fun getDestinationDirectionFilterEnabled(): Boolean = prefs.getBoolean(KEY_DESTINATION_DIRECTION_FILTER_ENABLED, false)
+    fun setDestinationDirectionFilterEnabled(value: Boolean) = prefs.edit().putBoolean(KEY_DESTINATION_DIRECTION_FILTER_ENABLED, value).apply()
+    fun getSelectedDestinationFilterAddress(): String = prefs.getString(KEY_SELECTED_DESTINATION_FILTER_ADDRESS, "") ?: ""
+    fun setSelectedDestinationFilterAddress(value: String) = prefs.edit().putString(KEY_SELECTED_DESTINATION_FILTER_ADDRESS, value.trim()).apply()
+    fun saveDestinationFilterAddress(value: String) = interestPointDatabase.saveDestinationFilterAddress(value)
+    fun getDestinationFilterAddressHistory(): List<String> = interestPointDatabase.getDestinationFilterAddresses()
 
     fun getMinHourValue(): Float = prefs.getFloat(KEY_MIN_HOUR_VALUE, DEFAULT_MIN_HOUR)
     fun setMinHourValue(value: Float) = prefs.edit().putFloat(KEY_MIN_HOUR_VALUE, value).apply()

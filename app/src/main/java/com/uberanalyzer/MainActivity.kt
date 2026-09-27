@@ -67,8 +67,10 @@ class MainActivity : ThemedActivity() {
     private var isMapLoaded = false
     private var pendingRoutes: List<RouteData>? = null
     private var currentActiveRoutes: MutableList<RouteData> = mutableListOf()
+    private var latestCapturedRoutes: List<RouteData> = emptyList()
     private lateinit var settingsManager: com.uberanalyzer.settings.SettingsManager
     private lateinit var autoHideSwitch: androidx.appcompat.widget.SwitchCompat
+    private lateinit var destinationDirectionFilterSwitch: androidx.appcompat.widget.SwitchCompat
 
     private var userLat: Double? = null
     private var userLng: Double? = null
@@ -339,6 +341,13 @@ class MainActivity : ThemedActivity() {
             autoHideSwitch.isChecked = isEnabled
             if (isEnabled) UberAccessibilityService.triggerScan(this)
         }
+        if (::destinationDirectionFilterSwitch.isInitialized) {
+            val wasEnabled = destinationDirectionFilterSwitch.isChecked
+            destinationDirectionFilterSwitch.isChecked = settingsManager.getDestinationDirectionFilterEnabled()
+            if (wasEnabled == destinationDirectionFilterSwitch.isChecked && latestCapturedRoutes.isNotEmpty()) {
+                displayRoutesOnMap(latestCapturedRoutes)
+            }
+        }
     }
 
     private fun updateStatusView() {
@@ -412,6 +421,24 @@ class MainActivity : ThemedActivity() {
             }
         }
 
+        destinationDirectionFilterSwitch = androidx.appcompat.widget.SwitchCompat(this).apply {
+            text = "📍 Endereço"
+            contentDescription = "Filtrar viagens pela direção do endereço selecionado"
+            textSize = 11f
+            setTextColor(getColor(R.color.app_text))
+            isChecked = settingsManager.getDestinationDirectionFilterEnabled()
+            setPadding(dp(6), dp(2), dp(6), dp(2))
+            layoutParams = LinearLayout.LayoutParams(-2, -2).apply { setMargins(dp(4), 0, 0, 0) }
+            setOnCheckedChangeListener { _, checked ->
+                if (checked) {
+                    showDestinationDirectionFilterDialog()
+                } else {
+                    settingsManager.setDestinationDirectionFilterEnabled(false)
+                    displayRoutesOnMap(latestCapturedRoutes)
+                }
+            }
+        }
+
         val configButton = Button(this).apply {
             text = "☰"
             contentDescription = "Abrir configurações"
@@ -427,6 +454,7 @@ class MainActivity : ThemedActivity() {
 
         titleRow.addView(titleText)
         titleRow.addView(autoHideSwitch)
+        titleRow.addView(destinationDirectionFilterSwitch)
         titleScrollView.addView(titleRow)
         val cardsToggle = Button(this).apply {
             text = if (cardsMinimized) "⌄" else "⌃"
@@ -538,7 +566,7 @@ class MainActivity : ThemedActivity() {
                             updateDriverLocationOnMap(uLat, uLng)
                         }
                     }
-                    val routes = pendingRoutes ?: currentActiveRoutes.toList()
+                    val routes = pendingRoutes ?: latestCapturedRoutes
                     pendingRoutes = null
                     displayRoutesOnMap(routes)
                 }
@@ -1041,8 +1069,102 @@ class MainActivity : ThemedActivity() {
         dialog.show()
     }
 
+    private fun showDestinationDirectionFilterDialog() {
+        val dp = { value: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt() }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+        }
+
+        content.addView(TextView(this).apply {
+            text = "Escolha um endereço salvo ou cadastre outro. As viagens precisam ter origem e destino reconhecidos."
+            setTextColor(getColor(R.color.app_secondary))
+            textSize = 13f
+            setPadding(0, 0, 0, dp(8))
+        })
+
+        val addressGroup = RadioGroup(this).apply { orientation = RadioGroup.VERTICAL }
+        val savedAddresses = settingsManager.getDestinationFilterAddressHistory()
+        val savedAddressButtons = mutableListOf<RadioButton>()
+        savedAddresses.forEach { address ->
+            val option = RadioButton(this).apply {
+                id = View.generateViewId()
+                text = address
+                setTextColor(getColor(R.color.app_text))
+                textSize = 14f
+                isChecked = address.equals(settingsManager.getSelectedDestinationFilterAddress(), ignoreCase = true)
+            }
+            savedAddressButtons.add(option)
+            addressGroup.addView(option)
+        }
+        if (savedAddresses.isEmpty()) {
+            addressGroup.addView(TextView(this).apply {
+                text = "Ainda não há endereços salvos. Cadastre o primeiro abaixo."
+                setTextColor(getColor(R.color.app_secondary))
+                textSize = 13f
+                setPadding(0, dp(4), 0, dp(8))
+            })
+        }
+        content.addView(addressGroup)
+
+        content.addView(TextView(this).apply {
+            text = "Novo endereço"
+            setTextColor(getColor(R.color.app_text))
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(8), 0, dp(4))
+        })
+        val newAddressInput = EditText(this).apply {
+            hint = "Digite o endereço de referência"
+            setTextColor(getColor(R.color.app_text))
+            setHintTextColor(getColor(R.color.app_secondary))
+            setBackgroundColor(getColor(R.color.app_surface))
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+        }
+        content.addView(newAddressInput)
+
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("📍 Filtro por direção")
+            .setView(ScrollView(this).apply { addView(content) })
+            .setPositiveButton("Usar endereço", null)
+            .setNegativeButton("Cancelar", null)
+            .create()
+
+        dialog.setOnCancelListener {
+            destinationDirectionFilterSwitch.isChecked = false
+        }
+        dialog.setOnShowListener {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
+                destinationDirectionFilterSwitch.isChecked = false
+                dialog.dismiss()
+            }
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val typedAddress = newAddressInput.text.toString().trim()
+                val chosenAddress = if (typedAddress.isNotBlank()) {
+                    settingsManager.saveDestinationFilterAddress(typedAddress)
+                    typedAddress
+                } else {
+                    savedAddressButtons.firstOrNull { it.id == addressGroup.checkedRadioButtonId }
+                        ?.text?.toString()?.trim().orEmpty()
+                }
+                if (chosenAddress.isBlank()) {
+                    Toast.makeText(this, "Escolha ou digite um endereço.", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                settingsManager.setSelectedDestinationFilterAddress(chosenAddress)
+                settingsManager.setDestinationDirectionFilterEnabled(true)
+                dialog.dismiss()
+                displayRoutesOnMap(latestCapturedRoutes)
+                Toast.makeText(this, "Filtro por endereço ativado", Toast.LENGTH_SHORT).show()
+            }
+        }
+        dialog.show()
+    }
+
     private fun displayRoutesOnMap(routes: List<RouteData>) {
         val generation = ++routeRenderGeneration
+        latestCapturedRoutes = routes.toList()
         val maxRoutesConfig = settingsManager.getMaxRoutes()
         val limitedRoutes = routes.take(maxRoutesConfig)
         if (!isMapLoaded) {
@@ -1051,53 +1173,57 @@ class MainActivity : ThemedActivity() {
         }
 
         val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
-
-        currentActiveRoutes = limitedRoutes.toMutableList()
+        val directionFilterEnabled = settingsManager.getDestinationDirectionFilterEnabled()
+        val selectedAddress = settingsManager.getSelectedDestinationFilterAddress()
+        currentActiveRoutes = if (directionFilterEnabled) mutableListOf() else limitedRoutes.toMutableList()
         titleText.text = getAppVersionName()
 
         if (limitedRoutes.isEmpty()) {
-            routesCardsContainer.removeAllViews()
-            val waitingCard = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(12), dp(10), dp(12), dp(10))
-                background = GradientDrawable().apply {
-                    setColor(getColor(R.color.app_background))
-                    cornerRadius = dp(8).toFloat()
-                    setStroke(dp(2), getColor(R.color.app_accent))
-                }
-                layoutParams = LinearLayout.LayoutParams(dp(300), -2).apply {
-                    setMargins(0, 0, dp(8), 0)
-                }
-            }
-            val titleWait = TextView(this).apply {
-                text = "🟢 AGUARDANDO SOLICITAÇÕES DO INDRIVE"
-                setTextColor(getColor(R.color.app_accent))
-                textSize = 12f
-                typeface = Typeface.DEFAULT_BOLD
-            }
-            val descWait = TextView(this).apply {
-                text = "Abra o aplicativo do inDrive lado a lado. O Leitor de Tela capturará automaticamente as corridas originais e flotará as rotas no mapa em tempo real."
-                setTextColor(getColor(R.color.app_secondary))
-                textSize = 11f
-                maxLines = 3
-            }
-            waitingCard.addView(titleWait)
-            waitingCard.addView(descWait)
-            routesCardsContainer.addView(waitingCard)
+            renderNoActiveRoutesState(showingAddressFilterResults = false)
+            return
+        }
 
+        if (directionFilterEnabled) {
+            routesCardsContainer.removeAllViews()
+            routesCardsContainer.addView(TextView(this).apply {
+                text = "⏳ Conferindo origem e destino..."
+                setTextColor(getColor(R.color.app_secondary))
+                textSize = 12f
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+            })
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
                 webView.evaluateJavascript("updateMultiRouteMap('[]')", null)
             } else {
                 webView.loadUrl("javascript:updateMultiRouteMap('[]');")
             }
-            return
         }
 
         // Asynchronously resolve real coordinates on background thread
         Thread {
             val jsRoutesArray = JSONArray()
+            val targetCoordinates = if (directionFilterEnabled && selectedAddress.isNotBlank()) {
+                resolveCoordinates(selectedAddress, false, 0.0, 0)
+            } else Pair(0.0, 0.0)
 
-            limitedRoutes.forEachIndexed { index, route ->
+            val visibleRoutes = if (!directionFilterEnabled) {
+                limitedRoutes
+            } else if (targetCoordinates == Pair(0.0, 0.0)) {
+                emptyList()
+            } else {
+                limitedRoutes.filterIndexed { index, route ->
+                    if (!com.uberanalyzer.parser.RideParser.isRealAddress(route.pickup) ||
+                        !com.uberanalyzer.parser.RideParser.isRealAddress(route.dropoff)) {
+                        false
+                    } else {
+                        val origin = resolveCoordinates(route.pickup, true, route.distanceKm, index)
+                        val destination = resolveCoordinates(route.dropoff, false, route.distanceKm, index)
+                        origin != Pair(0.0, 0.0) && destination != Pair(0.0, 0.0) &&
+                            distanceBetweenCoordinates(destination, targetCoordinates) < distanceBetweenCoordinates(origin, targetCoordinates)
+                    }
+                }
+            }
+
+            visibleRoutes.forEachIndexed { index, route ->
                 val (pLat, pLng) = resolveCoordinates(route.pickup, true, route.distanceKm, index)
                 val (dLat, dLng) = resolveCoordinates(route.dropoff, false, route.distanceKm, index)
 
@@ -1119,9 +1245,60 @@ class MainActivity : ThemedActivity() {
             }
 
             runOnUiThread {
-                if (generation == routeRenderGeneration) renderCardsAndMapUi(limitedRoutes, jsRoutesArray)
+                if (generation == routeRenderGeneration) {
+                    currentActiveRoutes = visibleRoutes.toMutableList()
+                    if (visibleRoutes.isEmpty()) renderNoActiveRoutesState(showingAddressFilterResults = directionFilterEnabled)
+                    else renderCardsAndMapUi(visibleRoutes, jsRoutesArray)
+                }
             }
         }.start()
+    }
+
+    private fun distanceBetweenCoordinates(first: Pair<Double, Double>, second: Pair<Double, Double>): Double {
+        val earthRadiusMeters = 6_371_000.0
+        val lat1 = Math.toRadians(first.first)
+        val lat2 = Math.toRadians(second.first)
+        val deltaLat = Math.toRadians(second.first - first.first)
+        val deltaLon = Math.toRadians(second.second - first.second)
+        val a = kotlin.math.sin(deltaLat / 2) * kotlin.math.sin(deltaLat / 2) +
+            kotlin.math.cos(lat1) * kotlin.math.cos(lat2) *
+            kotlin.math.sin(deltaLon / 2) * kotlin.math.sin(deltaLon / 2)
+        return earthRadiusMeters * 2 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1 - a))
+    }
+
+    private fun renderNoActiveRoutesState(showingAddressFilterResults: Boolean) {
+        val dp = { value: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt() }
+        currentActiveRoutes = mutableListOf()
+        routesCardsContainer.removeAllViews()
+        val waitingCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = GradientDrawable().apply {
+                setColor(getColor(R.color.app_background))
+                cornerRadius = dp(8).toFloat()
+                setStroke(dp(2), getColor(R.color.app_accent))
+            }
+            layoutParams = LinearLayout.LayoutParams(dp(300), -2).apply { setMargins(0, 0, dp(8), 0) }
+        }
+        waitingCard.addView(TextView(this).apply {
+            text = if (showingAddressFilterResults) "📍 NENHUMA VIAGEM NA DIREÇÃO DO ENDEREÇO" else "🟢 AGUARDANDO SOLICITAÇÕES DO INDRIVE"
+            setTextColor(getColor(R.color.app_accent))
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+        })
+        waitingCard.addView(TextView(this).apply {
+            text = if (showingAddressFilterResults) "As viagens sem origem ou destino reconhecidos também são removidas."
+                else "Abra o aplicativo do inDrive lado a lado. O Leitor de Tela capturará automaticamente as corridas originais e flotará as rotas no mapa em tempo real."
+            setTextColor(getColor(R.color.app_secondary))
+            textSize = 11f
+            maxLines = 3
+        })
+        routesCardsContainer.addView(waitingCard)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            webView.evaluateJavascript("updateMultiRouteMap('[]')", null)
+        } else {
+            webView.loadUrl("javascript:updateMultiRouteMap('[]');")
+        }
     }
 
     fun hideTopRideAndCascade(rideIndex: Int = 0) {
@@ -1826,7 +2003,7 @@ class MainActivity : ThemedActivity() {
                 settingsManager.setHighProfitAlertKm(parsedHighProfit)
                 settingsManager.setConfirmHideBelowMinKm(confirmHideCheck.isChecked)
 
-                displayRoutesOnMap(pendingRoutes ?: currentActiveRoutes.toList())
+                displayRoutesOnMap(pendingRoutes ?: latestCapturedRoutes)
 
                 UberAccessibilityService.triggerScan(this@MainActivity)
             }
