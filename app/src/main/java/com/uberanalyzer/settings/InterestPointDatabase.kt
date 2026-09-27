@@ -123,8 +123,11 @@ class InterestPointDatabase(context: Context) : SQLiteOpenHelper(context, "indri
 
     private fun syncAddressRegistries(db: SQLiteDatabase) {
         val points = parsePoints(readPoints(db))
-        val seen = points.mapNotNull { it.optString("address").trim().takeIf { address -> address.isNotBlank() } }
-            .map { it.lowercase(Locale.ROOT) }.toMutableSet()
+        val seen = mutableSetOf<String>()
+        for (index in 0 until points.length()) {
+            val address = points.optJSONObject(index)?.optString("address")?.trim().orEmpty()
+            if (address.isNotBlank()) seen.add(address.lowercase(Locale.ROOT))
+        }
         db.rawQuery("SELECT address FROM destination_filter_addresses ORDER BY id ASC", null).use { cursor ->
             while (cursor.moveToNext()) {
                 val address = cursor.getString(0).trim()
