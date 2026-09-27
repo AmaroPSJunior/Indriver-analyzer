@@ -764,24 +764,43 @@ class MainActivity : ThemedActivity() {
 
                     function updateMultiRouteMap(routesJsonStr) {
                         var generation = ++mapGeneration;
-                        for (var i = 0; i < routeLayers.length; i++) {
-                            map.removeLayer(routeLayers[i]);
-                        }
-                        routeLayers = [];
-                        routeLinesMap = {};
-
                         var routes = [];
                         try {
                             routes = JSON.parse(routesJsonStr);
-                            allRoutesData = routes;
                         } catch(e) {
                             console.error(e);
                             return;
                         }
 
-                        if (!routes || routes.length === 0) return;
+                        if (!routes || routes.length === 0) {
+                            routeLayers.forEach(function(layer) { map.removeLayer(layer); });
+                            routeLayers = [];
+                            routeLinesMap = {};
+                            allRoutesData = [];
+                            return;
+                        }
 
                         var groupLayers = [];
+                        var nextRouteLayers = [];
+                        var nextRouteLinesMap = {};
+                        var pendingGeometry = 0;
+                        var committed = false;
+                        function commitRoutes() {
+                            if (committed || pendingGeometry > 0 || generation !== mapGeneration) return;
+                            committed = true;
+                            routeLayers.forEach(function(layer) { map.removeLayer(layer); });
+                            routeLayers = nextRouteLayers;
+                            routeLinesMap = nextRouteLinesMap;
+                            allRoutesData = routes;
+                            routeLayers.forEach(function(layer) { layer.addTo(map); });
+                            if (groupLayers.length > 0) {
+                                var group = new L.featureGroup(groupLayers);
+                                map.fitBounds(group.getBounds(), {padding: [50, 50]});
+                            }
+                            if (window.selectedInterestPointMarker) {
+                                map.setView(window.selectedInterestPointMarker.getLatLng(), Math.max(map.getZoom(), 15));
+                            }
+                        }
                         if (driverLocationMarker) {
                             groupLayers.push(driverLocationMarker);
                         }
@@ -833,16 +852,16 @@ class MainActivity : ThemedActivity() {
                                 var hasDropoff = r.dLat && r.dLng && Math.abs(r.dLat) > 0.001 && Math.abs(r.dLng) > 0.001 && isRealAddressJS(r.dropoff);
 
                                 if (hasPickup) {
-                                    var pMarker = L.marker([r.pLat, r.pLng], {icon: pickupIcon}).addTo(map)
+                                    var pMarker = L.marker([r.pLat, r.pLng], {icon: pickupIcon})
                                         .bindTooltip('<b>🟢 EMBARQUE • ' + escapeHtml(fare) + '</b><br>📍 ' + escapeHtml(r.pickup), {sticky: true}).on('click', selectOriginalRide);
-                                    routeLayers.push(pMarker);
+                                    nextRouteLayers.push(pMarker);
                                     groupLayers.push(pMarker);
                                 }
 
                                 if (hasDropoff) {
-                                    var dMarker = L.marker([r.dLat, r.dLng], {icon: dropoffIcon}).addTo(map)
+                                    var dMarker = L.marker([r.dLat, r.dLng], {icon: dropoffIcon})
                                         .bindTooltip('<b>🔴 DESEMBARQUE • ' + escapeHtml(fare) + '</b><br>🏁 ' + escapeHtml(r.dropoff), {sticky: true}).on('click', selectOriginalRide);
-                                    routeLayers.push(dMarker);
+                                    nextRouteLayers.push(dMarker);
                                     groupLayers.push(dMarker);
                                 }
 
@@ -856,11 +875,12 @@ class MainActivity : ThemedActivity() {
                                         weight: 8,
                                         opacity: 0.95,
                                         smoothFactor: 1
-                                    }).addTo(map);
+                                    });
                                     line.bindTooltip(escapeHtml(fare), {permanent: false, sticky: true}).on('click', selectOriginalRide);
-                                    routeLayers.push(line);
+                                    nextRouteLayers.push(line);
                                     groupLayers.push(line);
-                                    routeLinesMap[idx] = line;
+                                    nextRouteLinesMap[idx] = line;
+                                    pendingGeometry++;
                                     fetch(osrmUrl)
                                         .then(function(res) { return res.json(); })
                                         .then(function(data) {
@@ -869,27 +889,25 @@ class MainActivity : ThemedActivity() {
                                             if (data && data.routes && data.routes.length > 0) {
                                                 latlngs = data.routes[0].geometry.coordinates.map(function(c) { return [c[1], c[0]]; });
                                             } else {
-                                                return;
+                                                latlngs = [];
                                             }
                                             line.setLatLngs(latlngs);
+                                            pendingGeometry--;
+                                            commitRoutes();
                                         })
                                         .catch(function(err) {
                                             if (generation !== mapGeneration) return;
                                             // Keep the route hidden when routing is unavailable. A straight
                                             // segment would suggest a road that was never calculated.
                                             line.setLatLngs([]);
+                                            pendingGeometry--;
+                                            commitRoutes();
                                         });
                                 }
                             })(idx);
                         }
 
-                        if (groupLayers.length > 0) {
-                            var group = new L.featureGroup(groupLayers);
-                            map.fitBounds(group.getBounds(), {padding: [50, 50]});
-                        }
-                        if (window.selectedInterestPointMarker) {
-                            map.setView(window.selectedInterestPointMarker.getLatLng(), Math.max(map.getZoom(), 15));
-                        }
+                        commitRoutes();
                     }
 
                     function focusRouteByIdx(idx) {
@@ -1231,18 +1249,7 @@ class MainActivity : ThemedActivity() {
         }
 
         if (directionFilterEnabled && !directionAlreadyVerified) {
-            routesCardsContainer.removeAllViews()
-            routesCardsContainer.addView(TextView(this).apply {
-                text = "⏳ Conferindo origem e destino..."
-                setTextColor(UiDesign.palette(this@MainActivity).secondary)
-                textSize = 12f
-                setPadding(dp(10), dp(8), dp(10), dp(8))
-            })
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-                webView.evaluateJavascript("updateMultiRouteMap('[]')", null)
-            } else {
-                webView.loadUrl("javascript:updateMultiRouteMap('[]');")
-            }
+            // Keep the currently visible cards and map until the filtered replacement is ready.
         }
 
         // Asynchronously resolve real coordinates on background thread

@@ -1,7 +1,15 @@
 // Executed inside initializeMap: only the base layer changes; route layers survive.
 var baseLayer = null;
+var baseLayers = [];
 var providerGeneration = 0;
 var vectorLibraryPromise = null;
+
+function keepOnlyBaseLayer(layer) {
+    baseLayers.slice().forEach(function(candidate) {
+        if (candidate !== layer && map.hasLayer(candidate)) map.removeLayer(candidate);
+    });
+    baseLayers = [layer];
+}
 
 function mapStatus(message) {
     var element = document.getElementById('map-status');
@@ -36,12 +44,10 @@ function loadVectorLibrary() {
 
 function setMapProvider(provider, unusedKey, dark) {
     var generation = ++providerGeneration;
-    if (baseLayer) { map.removeLayer(baseLayer); baseLayer = null; }
     mapStatus('Carregando mapa…');
     var tileErrors = 0;
     function raster(selected) {
         if (generation !== providerGeneration) return;
-        if (baseLayer) map.removeLayer(baseLayer);
         var url = selected === 'carto'
             ? 'https://{s}.basemaps.cartocdn.com/' + (dark ? 'dark_all' : 'rastertiles/voyager') + '/{z}/{x}/{y}{r}.png'
             : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
@@ -51,7 +57,12 @@ function setMapProvider(provider, unusedKey, dark) {
             attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' + (selected === 'carto' ? ' © CARTO' : '')
         });
         baseLayer = layer;
-        layer.on('tileload', function() { if (generation === providerGeneration && baseLayer === layer) mapStatus(''); });
+        baseLayers.push(layer);
+        layer.on('tileload', function() {
+            if (generation !== providerGeneration || baseLayer !== layer) return;
+            keepOnlyBaseLayer(layer);
+            mapStatus('');
+        });
         layer.on('tileerror', function() {
             if (generation !== providerGeneration || baseLayer !== layer) return;
             tileErrors++;
@@ -60,7 +71,7 @@ function setMapProvider(provider, unusedKey, dark) {
                 mapStatus('Provedor indisponível. Tentando OpenStreetMap…');
             } else if (tileErrors >= 3) mapStatus('Sem conexão com o mapa. Verifique a internet ou troque o provedor.');
         });
-        baseLayer.addTo(map);
+        layer.addTo(map);
     }
     // Keep a usable raster map while optional WebGL assets are loaded.
     raster(provider === 'carto' ? 'carto' : 'osm');
@@ -68,14 +79,30 @@ function setMapProvider(provider, unusedKey, dark) {
         loadVectorLibrary().then(function() {
             if (generation !== providerGeneration) return;
             var vector = L.maplibreGL({style: 'https://tiles.openfreemap.org/styles/' + (dark ? 'dark' : 'liberty')});
-            var previous = baseLayer;
+            baseLayers.push(vector);
             vector.addTo(map);
             baseLayer = vector;
-            map.removeLayer(previous);
             var gl = vector.getMaplibreMap();
-            gl.on('load', function() { if (generation === providerGeneration) mapStatus(''); });
+            // MapLibre's WebGL canvas can briefly paint as a black rectangle while
+            // the style and tiles are loading. Keep the raster map visible below it
+            // and reveal the vector canvas only after its first complete render.
+            var vectorCanvas = gl.getContainer();
+            vectorCanvas.style.opacity = '0';
+            vectorCanvas.style.backgroundColor = 'transparent';
+            gl.once('load', function() {
+                if (generation !== providerGeneration || baseLayer !== vector) return;
+                vectorCanvas.style.opacity = '1';
+                mapStatus('');
+            });
+            gl.on('movestart', function() {
+                if (generation === providerGeneration && baseLayer === vector) vectorCanvas.style.opacity = '0';
+            });
+            gl.on('idle', function() {
+                if (generation === providerGeneration && baseLayer === vector && gl.isStyleLoaded()) vectorCanvas.style.opacity = '1';
+            });
             gl.on('error', function() {
                 if (generation === providerGeneration && baseLayer === vector) {
+                    vectorCanvas.style.opacity = '0';
                     raster('osm');
                     mapStatus('OpenFreeMap indisponível. Usando OpenStreetMap.');
                 }
