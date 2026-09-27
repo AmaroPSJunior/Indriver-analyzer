@@ -384,7 +384,7 @@ class MainActivity : ThemedActivity() {
         }
 
         titleText = TextView(this).apply {
-            text = "⚡ inDrive Analyzer ${getAppVersionName()}"
+            text = getAppVersionName()
             setTextColor(getColor(R.color.app_text))
             textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
@@ -392,7 +392,8 @@ class MainActivity : ThemedActivity() {
         }
 
         autoHideSwitch = androidx.appcompat.widget.SwitchCompat(this).apply {
-            text = "⚡ Auto-Ocultar "
+            text = ""
+            contentDescription = "Ativar ou desativar o filtro de valor por quilômetro"
             textSize = 11f
             setTextColor(getColor(R.color.app_text))
             isChecked = settingsManager.getAutoHideEnabled()
@@ -1052,7 +1053,7 @@ class MainActivity : ThemedActivity() {
         val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
 
         currentActiveRoutes = limitedRoutes.toMutableList()
-        titleText.text = "⚡ inDrive Analyzer ${getAppVersionName()}"
+        titleText.text = getAppVersionName()
 
         if (limitedRoutes.isEmpty()) {
             routesCardsContainer.removeAllViews()
