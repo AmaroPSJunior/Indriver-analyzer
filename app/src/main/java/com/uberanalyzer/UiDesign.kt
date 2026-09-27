@@ -69,34 +69,70 @@ object UiDesign {
         strokeColor?.let { setStroke((strokeDp * context.resources.displayMetrics.density).toInt(), it) }
     }
 
-    /** A miniature composition preview mirrors the actual hierarchy of its layout. */
+    /** Selector thumbnails preview the hierarchy and information density of each experience. */
     fun layoutPreview(context: Context, rawId: String): View {
-        val id = LayoutId.normalize(rawId); val p = paletteFor(context, id)
+        val id = LayoutId.normalize(rawId)
+        val p = paletteFor(context, id)
         val dp = { n: Int -> (n * context.resources.displayMetrics.density).toInt() }
-        val root = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(8), dp(7), dp(8), dp(7)); background = rounded(context, p.background, p.radiusDp, p.outline); layoutParams = LinearLayout.LayoutParams(-1, dp(148)) }
-        fun block(label: String, color: Int, height: Int, weight: Float = 1f): TextView = TextView(context).apply {
-            text = label; gravity = Gravity.CENTER; setTextColor(p.text); textSize = 9f; typeface = Typeface.DEFAULT_BOLD
-            background = rounded(context, color, maxOf(5, p.radiusDp / 2))
-            layoutParams = LinearLayout.LayoutParams(0, dp(height), weight).apply { setMargins(dp(2), dp(2), dp(2), dp(2)) }
+        fun text(value: String, size: Float, color: Int, bold: Boolean = false) = TextView(context).apply {
+            text = value; textSize = size; setTextColor(color)
+            if (bold) typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER_VERTICAL; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
         }
-        val toolbar = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; addView(block(id.uppercase(), p.surface, 20, 2f)); addView(block("Filtros", p.raisedSurface, 20)); addView(block("•••", p.raisedSurface, 20, .45f)) }
-        root.addView(toolbar)
+        fun block(value: String, fill: Int, height: Int, fg: Int = p.text) = TextView(context).apply {
+            text = value; gravity = Gravity.CENTER; textSize = 9f; typeface = Typeface.DEFAULT_BOLD; setTextColor(fg)
+            background = rounded(context, fill, maxOf(5, p.radiusDp / 2))
+            layoutParams = LinearLayout.LayoutParams(-1, dp(height)).apply { topMargin = dp(3) }
+        }
+        val root = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(9), dp(7), dp(9), dp(7))
+            background = rounded(context, p.background, p.radiusDp, p.outline)
+            layoutParams = LinearLayout.LayoutParams(-1, dp(158))
+        }
         when (id) {
             LayoutId.COCKPIT -> {
-                root.addView(block("R$ 42,50     R$ 3,80/km", p.surface, 39))
-                root.addView(block("MAPA · rota ativa", p.raisedSurface, 31))
-                root.addView(LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; addView(block("1 · 42,50", p.surface, 30)); addView(block("2 · 31,00", p.surface, 30)) })
+                val head = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+                head.addView(text("COCKPIT · ON", 9f, p.accent, true), LinearLayout.LayoutParams(0, dp(17), 1f))
+                head.addView(text("Filtros · Ajustes", 8f, p.secondary))
+                root.addView(head)
+                val hero = LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL; setPadding(dp(8), dp(5), dp(8), dp(5))
+                    background = rounded(context, p.surface, 10, p.outline)
+                }
+                hero.addView(text("R$ 42,50", 24f, p.text, true))
+                hero.addView(text("R$ 3,80/km   11,2 km   28 min", 9f, p.accent, true))
+                hero.addView(text("Nota 9,1 · destino em direção à zona", 8f, p.secondary))
+                root.addView(hero, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+                root.addView(block("VALOR/KM     ENDEREÇO     MAPA DA ROTA", p.raisedSurface, 19))
+                root.addView(text("ALTERNATIVAS", 8f, p.secondary, true))
+                root.addView(block("R$ 31,00      8,1 km      Nota 8,2", p.surface, 18))
+                root.addView(block("R$ 28,00      7,4 km      Nota 7,8", p.surface, 18))
             }
             LayoutId.FLOW -> {
-                root.addView(block("#1   R$ 42,50   11,2 km   8,9", p.surface, 25))
-                root.addView(block("#2   R$ 31,00    8,1 km   8,2", p.surface, 25))
-                root.addView(block("#3   R$ 28,00    7,4 km   7,8", p.surface, 25))
-                root.addView(block("MAPA CONTEXTUAL", p.raisedSurface, 30))
+                val head = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+                head.addView(text("FLOW / FILA", 10f, p.text, true), LinearLayout.LayoutParams(0, dp(18), 1f))
+                head.addView(text("Ordenar · Ajustes", 8f, p.accent, true))
+                root.addView(head)
+                val summary = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; background = rounded(context, p.surface, 8, p.outline); setPadding(dp(5), dp(3), dp(5), dp(3)) }
+                listOf("3 corridas", "R$ 3,80/km", "R$ 42,50").forEach { summary.addView(text(it, 8f, p.text, true), LinearLayout.LayoutParams(0, dp(20), 1f)) }
+                root.addView(summary)
+                root.addView(block("ORDEM   VALOR   KM / MIN   NOTA", p.raisedSurface, 17, p.secondary))
+                root.addView(block("01   R$ 42,50   11,2 / 28   9,1", p.surface, 20))
+                root.addView(block("02   R$ 31,00     8,1 / 21   8,2", p.surface, 20))
+                root.addView(block("03   R$ 28,00     7,4 / 18   7,8", p.surface, 20))
+                root.addView(block("MAPA CONTEXTUAL · 3 ROTAS", p.raisedSurface, 22, p.accent))
             }
             else -> {
-                root.addView(block("PRIORIDADE  ·  R$ 42,50", p.surface, 32))
-                root.addView(block("MAPA PRINCIPAL · rotas", p.raisedSurface, 43))
-                root.addView(LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; addView(block("R$ 31,00", p.surface, 24)); addView(block("R$ 28,00", p.surface, 24)) })
+                val head = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+                head.addView(text("AURORA", 10f, p.text, true), LinearLayout.LayoutParams(0, dp(18), 1f))
+                head.addView(text("Endereço · Ajustes", 8f, p.accent, true))
+                root.addView(head)
+                root.addView(block("VALOR/KM     FILTRO DE ENDEREÇO", p.surface, 19, p.accent))
+                root.addView(block("MAPA AO VIVO · ORIGEM → DESTINO", p.raisedSurface, 48, p.secondary))
+                val tray = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(7), dp(3), dp(7), dp(3)); background = rounded(context, p.surface, 9, p.outline) }
+                tray.addView(text("PRIORITÁRIA     R$ 42,50", 11f, p.accent, true))
+                tray.addView(text("R$ 3,80/km · 11,2 km · Nota 9,1", 8f, p.secondary))
+                root.addView(tray, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
             }
         }
         return root

@@ -26,6 +26,7 @@ import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.webkit.GeolocationPermissions
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
@@ -64,6 +65,7 @@ class MainActivity : ThemedActivity() {
     private var uiLayoutMode = LayoutId.AURORA
     private lateinit var routesCardsContainer: LinearLayout
     private lateinit var webView: WebView
+    private var mainLayoutRoot: View? = null
 
     private var isMapLoaded = false
     private var pendingRoutes: List<RouteData>? = null
@@ -435,12 +437,21 @@ class MainActivity : ThemedActivity() {
         accButton = permissionButton
         val cardsToggle = Button(this).apply { contentDescription = if (cardsMinimized) "Expandir cards" else "Recolher cards" }
         val controls = MainUiControls(titleText, autoHideSwitch, destinationDirectionFilterSwitch, layoutButton, configButton, permissionButton, cardsToggle)
+        val priority = currentActiveRoutes.firstOrNull() ?: latestCapturedRoutes.firstOrNull()
         val state = MainUiState(
             layoutId = uiLayoutMode, version = getAppVersionName(),
             autoHideEnabled = settingsManager.getAutoHideEnabled(),
             addressFilterEnabled = settingsManager.getDestinationDirectionFilterEnabled(),
             selectedAddress = settingsManager.getSelectedDestinationFilterAddress(),
-            cardsMinimized = cardsMinimized
+            cardsMinimized = cardsMinimized,
+            rideCount = currentActiveRoutes.size.takeIf { it > 0 } ?: latestCapturedRoutes.size,
+            priorityPrice = priority?.price,
+            priorityPerKm = priority?.let { it.earningsPerKm.takeIf { rate -> rate > 0 && rate.isFinite() } ?: (it.price / it.distanceKm).takeIf { rate -> it.distanceKm > 0 && rate.isFinite() } },
+            priorityPerHour = priority?.let { if (it.timeMin > 0) it.price * 60.0 / it.timeMin else null },
+            priorityDistanceKm = priority?.distanceKm,
+            priorityDurationMin = priority?.timeMin,
+            priorityScore = priority?.score,
+            priorityDestination = priority?.dropoff.orEmpty()
         )
         webView = WebView(this).apply { setBackgroundColor(visual.background) }
         webView.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
@@ -458,6 +469,7 @@ class MainActivity : ThemedActivity() {
             }
         })
         routesCardsContainer = rendered.cards
+        mainLayoutRoot = rendered.root
         return rendered.root
     }
 
@@ -1307,6 +1319,7 @@ class MainActivity : ThemedActivity() {
     private fun renderNoActiveRoutesState(showingAddressFilterResults: Boolean) {
         currentActiveRoutes = mutableListOf()
         routesCardsContainer.removeAllViews()
+        refreshLayoutMetrics(emptyList())
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             webView.evaluateJavascript("updateMultiRouteMap('[]')", null)
         } else {
@@ -1355,8 +1368,19 @@ class MainActivity : ThemedActivity() {
     private fun applyCardsDisplayMode() {
         val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
         (routesCardsContainer.parent as? View)?.let { holder ->
-            holder.layoutParams = holder.layoutParams.apply {
-                height = if (cardsMinimized) dp(58) else dp(if (uiLayoutMode == LayoutId.FLOW) 210 else 190)
+            val holderParams = holder.layoutParams
+            if (holderParams is LinearLayout.LayoutParams && uiLayoutMode in listOf(LayoutId.COCKPIT, LayoutId.FLOW) && !cardsMinimized) {
+                holderParams.height = 0
+                holderParams.weight = 1f
+            } else {
+                holderParams.height = dp(if (cardsMinimized && uiLayoutMode == LayoutId.FLOW) 70 else if (cardsMinimized) 58 else 166)
+                if (holderParams is LinearLayout.LayoutParams) holderParams.weight = 0f
+            }
+            holder.layoutParams = holderParams
+            val panel = holder.parent as? View
+            val overlayRoot = panel?.parent as? ViewGroup
+            if (uiLayoutMode == LayoutId.AURORA && panel != null && overlayRoot is android.widget.FrameLayout) {
+                panel.layoutParams = panel.layoutParams.apply { height = dp(if (cardsMinimized) 108 else 226) }
             }
         }
         for (index in 0 until routesCardsContainer.childCount) {
@@ -1372,12 +1396,9 @@ class MainActivity : ThemedActivity() {
                 continue
             }
             card.layoutParams = (card.layoutParams as LinearLayout.LayoutParams).apply {
-                width = if (uiLayoutMode == LayoutId.FLOW) -1
-                    else dp(if (cardsMinimized) 150 else when (uiLayoutMode) {
-                        LayoutId.COCKPIT -> 270
-                        LayoutId.FLOW -> 280
-                        else -> 230
-                    })
+                width = if (uiLayoutMode == LayoutId.COCKPIT) -1
+                    else dp(if (cardsMinimized) 150 else 230)
+                if (uiLayoutMode == LayoutId.COCKPIT) setMargins(0, 0, 0, dp(7))
             }
             card.setPadding(dp(10), dp(if (cardsMinimized) 4 else 8), dp(10), dp(if (cardsMinimized) 4 else 8))
             card.findViewWithTag<View>("card_badge")?.visibility = if (cardsMinimized) View.GONE else View.VISIBLE
@@ -1395,6 +1416,7 @@ class MainActivity : ThemedActivity() {
         val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
         val visual = UiDesign.palette(this@MainActivity)
         routesCardsContainer.removeAllViews()
+        refreshLayoutMetrics(limitedRoutes)
         val minKm = settingsManager.getMinKmValue().toDouble()
 
         val highProfitKmThreshold = settingsManager.getHighProfitAlertKm().toDouble()
@@ -1456,20 +1478,98 @@ class MainActivity : ThemedActivity() {
                 return@forEachIndexed
             }
 
+            if (uiLayoutMode == LayoutId.COCKPIT) {
+                val valuePerKm = route.earningsPerKm.takeIf { it > 0 && it.isFinite() }
+                    ?: (route.price / route.distanceKm).takeIf { route.distanceKm > 0 && it.isFinite() } ?: 0.0
+                val card = LinearLayout(this).apply {
+                    tag = "ride_card"; orientation = LinearLayout.VERTICAL
+                    setPadding(dp(14), dp(11), dp(14), dp(11))
+                    background = UiDesign.rounded(this@MainActivity, visual.surface, 16, if (index == 0) visual.accent else visual.outline, if (index == 0) 2 else 1)
+                    layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) }
+                }
+                val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+                val offer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, -2, 1f) }
+                offer.addView(TextView(this).apply {
+                    tag = "card_badge"; text = if (index == 0) "OFERTA EM FOCO" else "OPÇÃO ${index + 1}"
+                    setTextColor(if (index == 0) visual.accent else visual.secondary); textSize = 10f; typeface = Typeface.DEFAULT_BOLD
+                })
+                offer.addView(TextView(this).apply {
+                    text = String.format(Locale.getDefault(), "R$ %.2f", route.price)
+                    setTextColor(visual.text); textSize = if (index == 0) 30f else 23f; typeface = Typeface.DEFAULT_BOLD
+                })
+                header.addView(offer)
+                header.addView(LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(12), dp(5), dp(12), dp(5))
+                    background = UiDesign.rounded(this@MainActivity, visual.raisedSurface, 13)
+                    addView(TextView(context).apply { text = String.format(Locale.getDefault(), "%.1f", route.score); setTextColor(visual.accent); textSize = 21f; typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER })
+                    addView(TextView(context).apply { text = "NOTA"; setTextColor(visual.secondary); textSize = 9f; gravity = Gravity.CENTER })
+                })
+                card.addView(header)
+
+                if (settingsManager.getShowRouteMetrics()) {
+                    val metrics = LinearLayout(this).apply {
+                        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                        setPadding(dp(10), dp(7), dp(10), dp(7))
+                        background = UiDesign.rounded(this@MainActivity, visual.raisedSurface, 10)
+                        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) }
+                    }
+                    val perHour = if (route.timeMin > 0) route.price * 60.0 / route.timeMin else 0.0
+                    listOf(
+                        String.format(Locale.getDefault(), "%.1f km", route.distanceKm),
+                        "${route.timeMin} min",
+                        String.format(Locale.getDefault(), "R$ %.2f/km", valuePerKm),
+                        String.format(Locale.getDefault(), "R$ %.0f/h", perHour)
+                    ).forEachIndexed { metricIndex, value ->
+                        metrics.addView(TextView(this).apply {
+                            text = value; setTextColor(if (metricIndex == 2) if (valuePerKm >= minKm) visual.success else visual.warning else visual.text)
+                            textSize = 11f; typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER
+                            layoutParams = LinearLayout.LayoutParams(0, dp(34), 1f)
+                        })
+                    }
+                    card.addView(metrics)
+                }
+
+                val itinerary = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL; setPadding(0, dp(8), 0, dp(5))
+                    addView(TextView(context).apply {
+                        text = "ORIGEM  ·  ${route.pickup.ifBlank { "Não identificada" }}"
+                        setTextColor(visual.secondary); textSize = 11f; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
+                    })
+                    addView(TextView(context).apply {
+                        text = "DESTINO  ·  ${route.dropoff.ifBlank { "Não identificado" }}"
+                        setTextColor(visual.text); textSize = 12f; typeface = Typeface.DEFAULT_BOLD; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
+                    })
+                }
+                itinerary.tag = "card_detail"
+                card.addView(itinerary)
+
+                val passengerRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; tag = "card_detail" }
+                decodePassengerPhoto(route)?.let { bitmap ->
+                    passengerRow.addView(android.widget.ImageView(this).apply {
+                        setImageBitmap(bitmap); contentDescription = "Foto do passageiro"; scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                        layoutParams = LinearLayout.LayoutParams(dp(30), dp(30)).apply { marginEnd = dp(8) }
+                    })
+                }
+                passengerRow.addView(TextView(this).apply {
+                    text = if (route.passenger.isNotBlank()) route.passenger else "Passageiro inDrive"
+                    setTextColor(visual.text); textSize = 11f; typeface = Typeface.DEFAULT_BOLD
+                })
+                card.addView(passengerRow)
+                card.setOnClickListener { webView.evaluateJavascript("focusRouteByIdx($index)", null) }
+                routesCardsContainer.addView(card)
+                return@forEachIndexed
+            }
+
             val card = LinearLayout(this).apply {
                 tag = "ride_card"
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(10), dp(8), dp(10), dp(8))
                 background = UiDesign.rounded(this@MainActivity, if (uiLayoutMode == LayoutId.COCKPIT) visual.surface else visual.raisedSurface, visual.radiusDp, colorInt, if (uiLayoutMode == LayoutId.COCKPIT) 1 else 2)
                 layoutParams = LinearLayout.LayoutParams(
-                    if (uiLayoutMode == LayoutId.FLOW) -1 else dp(when (uiLayoutMode) {
-                        LayoutId.COCKPIT -> 270
-                        LayoutId.FLOW -> 280
-                        else -> 230
-                    }),
+                    if (uiLayoutMode == LayoutId.COCKPIT) -1 else dp(230),
                     -2
                 ).apply {
-                    if (uiLayoutMode == LayoutId.FLOW) setMargins(0, 0, 0, dp(8))
+                    if (uiLayoutMode == LayoutId.COCKPIT) setMargins(0, 0, 0, dp(7))
                     else setMargins(0, 0, dp(8), 0)
                 }
             }
@@ -1544,13 +1644,7 @@ class MainActivity : ThemedActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
             }
 
-            val photoBitmap = if (settingsManager.getShowPassengerPhoto() &&
-                route.passengerPhoto.startsWith("data:image/") && route.passengerPhoto.contains(";base64,")) {
-                try {
-                    val bytes = android.util.Base64.decode(route.passengerPhoto.substringAfter(";base64,"), android.util.Base64.DEFAULT)
-                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                } catch (_: IllegalArgumentException) { null }
-            } else null
+            val photoBitmap = decodePassengerPhoto(route)
             if (photoBitmap != null) {
                 passRow.addView(android.widget.ImageView(this).apply {
                     setImageBitmap(photoBitmap)
@@ -1628,6 +1722,38 @@ class MainActivity : ThemedActivity() {
         }
 
         // Trigger Auto-Hide evaluation on active routes if switch is ON
+    }
+
+    private fun decodePassengerPhoto(route: RouteData): android.graphics.Bitmap? {
+        if (!settingsManager.getShowPassengerPhoto() || !route.passengerPhoto.startsWith("data:image/") || !route.passengerPhoto.contains(";base64,")) return null
+        return try {
+            val bytes = android.util.Base64.decode(route.passengerPhoto.substringAfter(";base64,"), android.util.Base64.DEFAULT)
+            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        } catch (_: IllegalArgumentException) { null }
+    }
+
+    /** Keep the layout-specific decision summaries bound to the same filtered queue as cards and map. */
+    private fun refreshLayoutMetrics(routes: List<RouteData>) {
+        val root = mainLayoutRoot ?: return
+        val first = routes.firstOrNull()
+        val pkm = first?.let { route ->
+            route.earningsPerKm.takeIf { it > 0 && it.isFinite() }
+                ?: (route.price / route.distanceKm).takeIf { route.distanceKm > 0 && it.isFinite() }
+        }
+        val perHour = first?.let { if (it.timeMin > 0) it.price * 60.0 / it.timeMin else null }
+        fun set(tag: String, value: String) { root.findViewWithTag<TextView>(tag)?.text = value }
+        set("aurora_ride_count", "${routes.size} oportunidades")
+        set("cockpit_ride_count", if (first == null) "AGUARDANDO OFERTA" else "DECISÃO ATUAL · 1 DE ${routes.size}")
+        set("cockpit_price", first?.let { String.format(Locale.getDefault(), "R$ %.2f", it.price) } ?: "—")
+        set("cockpit_per_km", pkm?.let { String.format(Locale.getDefault(), "R$ %.2f/km", it) } ?: "R$/km —")
+        set("cockpit_distance", first?.let { String.format(Locale.getDefault(), "%.1f km", it.distanceKm) } ?: "— km")
+        set("cockpit_duration", first?.let { "${it.timeMin} min" } ?: "— min")
+        set("cockpit_per_hour", perHour?.let { String.format(Locale.getDefault(), "R$ %.0f/h", it) } ?: "R$/h —")
+        set("cockpit_score", first?.let { String.format(Locale.getDefault(), "Nota %.1f", it.score) } ?: "Nota —")
+        set("cockpit_destination", first?.dropoff?.ifBlank { "Destino ainda não identificado" } ?: "Destino ainda não identificado")
+        set("flow_ride_count", routes.size.toString())
+        set("flow_best_per_km", pkm?.let { String.format(Locale.getDefault(), "%.2f", it) } ?: "—")
+        set("flow_best_price", first?.let { String.format(Locale.getDefault(), "R$ %.0f", it.price) } ?: "—")
     }
 
     private fun cleanAddressForGeocoding(rawAddress: String): String {
