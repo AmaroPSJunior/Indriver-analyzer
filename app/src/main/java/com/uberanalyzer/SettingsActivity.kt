@@ -141,9 +141,9 @@ class SettingsActivity : ThemedActivity() {
 
     private fun showDesignChooser() {
         val proposals = listOf(
-            Triple("classic", "🌌 Aurora", "Mapa como painel principal · filtros e cards horizontais no topo"),
-            Triple("driver", "🚗 Cabine", "Filtros em painel próprio · mapa amplo · faixa de corridas no rodapé"),
-            Triple("queue", "📋 Central da fila", "Lista vertical ampla · mapa em painel separado abaixo")
+            Triple(LayoutId.AURORA, "AURORA — Dashboard inteligente", "Mapa protagonista, oferta prioritária em destaque e indicadores de produtividade."),
+            Triple(LayoutId.COCKPIT, "COCKPIT — Leitura instantânea", "Painel automotivo escuro, números grandes e decisão com poucos elementos."),
+            Triple(LayoutId.FLOW, "FLOW — Fila organizada", "Ranking limpo com valores e métricas alinhados para comparar oportunidades.")
         )
         val selected = UiDesign.selectedId(this)
         val density = resources.displayMetrics.density
@@ -175,7 +175,7 @@ class SettingsActivity : ThemedActivity() {
             })
             card.addView(UiDesign.layoutPreview(this@SettingsActivity, id))
             card.addView(Button(this).apply {
-                text = if (id == selected) "Interface selecionada" else "Experimentar $name"
+                text = if (id == selected) "Interface selecionada" else "Experimentar este layout"
                 isEnabled = id != selected
                 setTextColor(if (isEnabled) colors.background else colors.secondary)
                 background = UiDesign.rounded(this@SettingsActivity, colors.accent, colors.radiusDp)
@@ -187,7 +187,7 @@ class SettingsActivity : ThemedActivity() {
                         .setMessage("A tela principal será reorganizada e receberá outra identidade visual. Corridas, filtros e configurações ficam preservados.")
                         .setNegativeButton("Continuar comparando", null)
                         .setPositiveButton("Confirmar interface") { _, _ ->
-                            getSharedPreferences("map_layout", MODE_PRIVATE).edit().putString("main_ui_layout", id).apply()
+                            getSharedPreferences("map_layout", MODE_PRIVATE).edit().putString("main_ui_layout", LayoutId.normalize(id)).apply()
                             Toast.makeText(this@SettingsActivity, "$name selecionada. A tela principal será atualizada ao voltar.", Toast.LENGTH_LONG).show()
                         }
                         .show()

@@ -79,7 +79,7 @@ class HistoryActivity : ThemedActivity() {
 
         // Clear Button
         val clearBtn = Button(this).apply {
-            text = "LIMPAR HISTÓRICO"; setBackgroundColor(Color.parseColor("#B71C1C")); setTextColor(Color.WHITE)
+            text = "LIMPAR HISTÓRICO"; background = UiDesign.rounded(this@HistoryActivity, UiDesign.palette(this@HistoryActivity).negative, UiDesign.palette(this@HistoryActivity).radiusDp); setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(30), 0, dp(30)) }
             setOnClickListener {
                 db.clearHistory()
@@ -129,7 +129,8 @@ class HistoryActivity : ThemedActivity() {
             background = GradientDrawable().apply {
                 setColor(UiDesign.palette(this@HistoryActivity).surface)
                 cornerRadius = dp(8).toFloat()
-                setStroke(dp(1), if (ride.score >= 8) Color.GREEN else if (ride.score >= 5) Color.YELLOW else Color.RED)
+                val colors = UiDesign.palette(this@HistoryActivity)
+                setStroke(dp(1), if (ride.score >= 8) colors.success else if (ride.score >= 5) colors.warning else colors.negative)
             }
         }
 
