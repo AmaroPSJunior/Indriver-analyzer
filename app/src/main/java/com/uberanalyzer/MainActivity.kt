@@ -456,6 +456,7 @@ class MainActivity : ThemedActivity() {
                     showDestinationDirectionFilterDialog()
                 } else {
                     settingsManager.setDestinationDirectionFilterEnabled(false)
+                    updateInterestPointsOnMap()
                     displayRoutesOnMap(latestCapturedRoutes)
                 }
             }
@@ -883,6 +884,9 @@ class MainActivity : ThemedActivity() {
                             var group = new L.featureGroup(groupLayers);
                             map.fitBounds(group.getBounds(), {padding: [50, 50]});
                         }
+                        if (window.selectedInterestPointMarker) {
+                            map.setView(window.selectedInterestPointMarker.getLatLng(), Math.max(map.getZoom(), 15));
+                        }
                     }
 
                     function focusRouteByIdx(idx) {
@@ -905,13 +909,15 @@ class MainActivity : ThemedActivity() {
                     }
                     window.setMapProvider = setMapProvider;
                     window.updateDriverLocation = updateDriverLocation;
-                    function updateInterestPoints(pointsJson) {
+                    function updateInterestPoints(pointsJson, selectedAddress) {
                         var points = [];
                         try { points = JSON.parse(pointsJson) || []; } catch(e) { return; }
+                        var selectedKey = (selectedAddress || '').trim().toLocaleLowerCase();
                         if (window.interestPointLayers) {
                             window.interestPointLayers.forEach(function(layer) { map.removeLayer(layer); });
                         }
                         window.interestPointLayers = [];
+                        window.selectedInterestPointMarker = null;
                         points.forEach(function(point) {
                             if (!point.visible || !point.address) return;
                             var query = encodeURIComponent(point.address);
@@ -919,15 +925,20 @@ class MainActivity : ThemedActivity() {
                                 .then(function(res) { return res.json(); })
                                 .then(function(results) {
                                     if (!results || !results.length) return;
+                                    var isSelected = selectedKey && String(point.address).trim().toLocaleLowerCase() === selectedKey;
                                     var icon = L.divIcon({
                                         className: '',
-                                        html: '<div style="width:34px;height:34px;border-radius:50%;background:#0F172A;border:2px solid #38BDF8;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 2px 6px rgba(0,0,0,.55);">' + escapeHtml(point.icon || '📍') + '</div>',
-                                        iconSize: [34,34], iconAnchor: [17,17]
+                                        html: '<div style="width:38px;height:38px;border-radius:50%;background:' + (isSelected ? '#065F46' : '#0F172A') + ';border:' + (isSelected ? '3px solid #FACC15' : '2px solid #38BDF8') + ';display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 2px 6px rgba(0,0,0,.55);">' + escapeHtml(point.icon || '📍') + '</div>',
+                                        iconSize: [38,38], iconAnchor: [19,19]
                                     });
                                     var marker = L.marker([Number(results[0].lat), Number(results[0].lon)], {icon: icon})
                                         .bindTooltip('<b>' + escapeHtml(point.name || 'Ponto de interesse') + '</b><br>' + escapeHtml(point.address), {sticky:true})
                                         .addTo(map);
                                     window.interestPointLayers.push(marker);
+                                    if (isSelected) {
+                                        window.selectedInterestPointMarker = marker;
+                                        map.setView(marker.getLatLng(), Math.max(map.getZoom(), 15), {animate:true});
+                                    }
                                 }).catch(function() {});
                         });
                     }
@@ -1049,12 +1060,18 @@ class MainActivity : ThemedActivity() {
     private val geocodeCache = ConcurrentHashMap<String, Pair<Double, Double>>()
 
     private var routeRenderGeneration = 0L
+    private var pendingInterestPointFocus: String? = null
 
-    private fun updateInterestPointsOnMap() {
+    private fun updateInterestPointsOnMap(focusAddress: String? = null) {
+        if (!focusAddress.isNullOrBlank()) pendingInterestPointFocus = focusAddress
         if (!::webView.isInitialized || !isMapLoaded) return
         val payload = JSONObject.quote(settingsManager.getMapInterestPoints())
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) webView.evaluateJavascript("updateInterestPoints($payload)", null)
-        else webView.loadUrl("javascript:updateInterestPoints($payload);")
+        val activeFocus = pendingInterestPointFocus
+            ?: settingsManager.getSelectedDestinationFilterAddress().takeIf { settingsManager.getDestinationDirectionFilterEnabled() }
+        val focusPayload = activeFocus?.takeIf { it.isNotBlank() }?.let { JSONObject.quote(it) } ?: "null"
+        pendingInterestPointFocus = null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) webView.evaluateJavascript("updateInterestPoints($payload, $focusPayload)", null)
+        else webView.loadUrl("javascript:updateInterestPoints($payload, $focusPayload);")
     }
 
     private fun showInterestPointsDialog() {
@@ -1164,7 +1181,6 @@ class MainActivity : ThemedActivity() {
             dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val typedAddress = newAddressInput.text.toString().trim()
                 val chosenAddress = if (typedAddress.isNotBlank()) {
-                    settingsManager.saveDestinationFilterAddress(typedAddress)
                     typedAddress
                 } else {
                     savedAddressButtons.firstOrNull { it.id == addressGroup.checkedRadioButtonId }
@@ -1174,9 +1190,11 @@ class MainActivity : ThemedActivity() {
                     Toast.makeText(this, "Escolha ou digite um endereço.", Toast.LENGTH_SHORT).show()
                     return@setOnClickListener
                 }
+                settingsManager.saveDestinationFilterAddress(chosenAddress)
                 settingsManager.setSelectedDestinationFilterAddress(chosenAddress)
                 settingsManager.setDestinationDirectionFilterEnabled(true)
                 dialog.dismiss()
+                updateInterestPointsOnMap(chosenAddress)
                 displayRoutesOnMap(latestCapturedRoutes)
                 UberAccessibilityService.triggerScan(this@MainActivity)
                 Toast.makeText(this, "Filtro por endereço ativado", Toast.LENGTH_SHORT).show()
