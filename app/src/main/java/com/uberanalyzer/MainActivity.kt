@@ -61,6 +61,7 @@ class MainActivity : ThemedActivity() {
     private lateinit var accButton: Button
     private lateinit var titleText: TextView
     private var cardsMinimized = false
+    private var uiLayoutMode = "classic"
     private lateinit var routesCardsContainer: LinearLayout
     private lateinit var webView: WebView
 
@@ -394,6 +395,8 @@ class MainActivity : ThemedActivity() {
 
         val cardPreferences = getSharedPreferences("map_layout", MODE_PRIVATE)
         cardsMinimized = cardPreferences.getBoolean("cards_minimized", false)
+        uiLayoutMode = cardPreferences.getString("main_ui_layout", "classic")
+            ?.takeIf { it in listOf("classic", "driver", "queue") } ?: "classic"
 
         // --- Top Header Panel ---
         val header = LinearLayout(this).apply {
@@ -475,6 +478,18 @@ class MainActivity : ThemedActivity() {
             setOnClickListener { showMapSettingsDialog() }
         }
 
+        val layoutButton = Button(this).apply {
+            text = "🎨"
+            contentDescription = "Escolher layout da tela"
+            tooltipText = contentDescription
+            textSize = 20f
+            setTextColor(getColor(R.color.app_text))
+            setBackgroundColor(Color.TRANSPARENT)
+            minWidth = 0
+            minimumWidth = 0
+            setOnClickListener { showLayoutSelectionDialog() }
+        }
+
         titleRow.addView(titleText)
         titleRow.addView(autoHideSwitch)
         titleRow.addView(destinationDirectionFilterSwitch)
@@ -503,6 +518,7 @@ class MainActivity : ThemedActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             addView(titleScrollView, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(layoutButton, LinearLayout.LayoutParams(dp(48), dp(48)))
             addView(configButton, LinearLayout.LayoutParams(dp(48), dp(48)))
         })
 
@@ -542,8 +558,23 @@ class MainActivity : ThemedActivity() {
         }
         cardsAreaRow.addView(scrollView, LinearLayout.LayoutParams(0, -2, 1f))
         cardsAreaRow.addView(cardsToggle, LinearLayout.LayoutParams(dp(48), dp(48)))
-        header.addView(cardsAreaRow)
+        val cardsPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(if (uiLayoutMode == "queue") 10 else 4), dp(10), dp(6))
+            setBackgroundColor(getColor(R.color.app_surface))
+        }
+        if (uiLayoutMode != "classic") {
+            cardsPanel.addView(TextView(this).apply {
+                text = if (uiLayoutMode == "queue") "🚘 Corridas na fila" else "🚘 Próximas corridas"
+                textSize = if (uiLayoutMode == "queue") 16f else 13f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(getColor(R.color.app_text))
+                setPadding(dp(4), dp(2), dp(4), dp(2))
+            })
+        }
+        cardsPanel.addView(cardsAreaRow)
 
+        if (uiLayoutMode == "classic") header.addView(cardsPanel)
         root.addView(header)
 
         // --- Interactive Map View ---
@@ -557,8 +588,58 @@ class MainActivity : ThemedActivity() {
             }
         }
         root.addView(webView)
+        when (uiLayoutMode) {
+            "driver" -> root.addView(cardsPanel, LinearLayout.LayoutParams(-1, -2))
+            "queue" -> {
+                root.removeView(webView)
+                root.addView(cardsPanel, LinearLayout.LayoutParams(-1, -2))
+                root.addView(webView, LinearLayout.LayoutParams(-1, 0, 1f))
+            }
+        }
 
         return root
+    }
+
+    private fun showLayoutSelectionDialog() {
+        val layouts = listOf(
+            "classic" to "📱 Clássico — tela atual, cards no cabeçalho",
+            "driver" to "🚗 Motorista — mapa em destaque, cards fixos abaixo",
+            "queue" to "📋 Fila — cards ampliados acima do mapa"
+        )
+        val selected = layouts.indexOfFirst { it.first == uiLayoutMode }.coerceAtLeast(0)
+        val options = layouts.map { it.second }.toTypedArray()
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("🎨 Escolha o layout")
+            .setSingleChoiceItems(options, selected) { chooser, which ->
+                chooser.dismiss()
+                val choice = layouts[which]
+                if (choice.first == uiLayoutMode) return@setSingleChoiceItems
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("Mudar para ${choice.second.substringBefore(" —")}? ")
+                    .setMessage("A tela será reorganizada. Seus filtros, corridas capturadas e configurações serão mantidos.")
+                    .setNegativeButton("Cancelar", null)
+                    .setPositiveButton("Mudar layout") { _, _ -> applyUiLayout(choice.first) }
+                    .show()
+            }
+            .setNegativeButton("Fechar", null)
+            .show()
+    }
+
+    private fun applyUiLayout(mode: String) {
+        if (mode !in listOf("classic", "driver", "queue") || mode == uiLayoutMode) return
+        getSharedPreferences("map_layout", MODE_PRIVATE).edit().putString("main_ui_layout", mode).apply()
+        val oldMap = if (::webView.isInitialized) webView else null
+        pendingRoutes = latestCapturedRoutes
+        isMapLoaded = false
+        oldMap?.let {
+            it.stopLoading()
+            it.removeJavascriptInterface("AndroidBridge")
+            (it.parent as? android.view.ViewGroup)?.removeView(it)
+            it.destroy()
+        }
+        setContentView(buildUI())
+        setupWebView()
+        updateStatusView()
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -1367,7 +1448,11 @@ class MainActivity : ThemedActivity() {
             val card = routesCardsContainer.getChildAt(index) as? LinearLayout ?: continue
             if (card.tag != "ride_card") continue
             card.layoutParams = (card.layoutParams as LinearLayout.LayoutParams).apply {
-                width = dp(if (cardsMinimized) 140 else 230)
+                width = if (cardsMinimized) dp(150) else dp(when (uiLayoutMode) {
+                    "driver" -> 250
+                    "queue" -> 280
+                    else -> 230
+                })
             }
             card.setPadding(dp(10), dp(if (cardsMinimized) 4 else 8), dp(10), dp(if (cardsMinimized) 4 else 8))
             card.findViewWithTag<View>("card_badge")?.visibility = if (cardsMinimized) View.GONE else View.VISIBLE
