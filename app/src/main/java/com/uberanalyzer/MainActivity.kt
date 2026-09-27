@@ -110,11 +110,14 @@ class MainActivity : ThemedActivity() {
 
     private val routeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            val directionFilterVerified = intent?.getBooleanExtra("direction_filter_verified", false) == true
-            latestRoutesDirectionFilterAddress = if (directionFilterVerified) {
-                intent?.getStringExtra("direction_filter_address")
-            } else null
             val ridesJsonStr = intent?.getStringExtra("rides_json")
+            if (!ridesJsonStr.isNullOrBlank()) {
+                try {
+                    if (JSONArray(ridesJsonStr).length() == 0) return
+                } catch (_: Exception) {
+                    // Continue to the intent extras fallback for legacy broadcasts.
+                }
+            }
             if (!ridesJsonStr.isNullOrBlank()) {
                 lastDetectedRidesJsonStr = ridesJsonStr
             }
@@ -194,6 +197,13 @@ class MainActivity : ThemedActivity() {
                     }
                 }
             }
+
+            // Empty or unrecognized transient captures must not replace the last useful queue.
+            if (routesList.isEmpty()) return
+            val directionFilterVerified = intent?.getBooleanExtra("direction_filter_verified", false) == true
+            latestRoutesDirectionFilterAddress = if (directionFilterVerified) {
+                intent?.getStringExtra("direction_filter_address")
+            } else null
 
             val maxCount = settingsManager.getMaxRoutes()
             val topRoutes = routesList.take(maxCount)
@@ -1177,9 +1187,10 @@ class MainActivity : ThemedActivity() {
 
     private fun displayRoutesOnMap(routes: List<RouteData>) {
         val generation = ++routeRenderGeneration
-        latestCapturedRoutes = routes.toList()
+        if (routes.isNotEmpty()) latestCapturedRoutes = routes.toList()
+        val routesToDisplay = if (routes.isNotEmpty()) routes else latestCapturedRoutes
         val maxRoutesConfig = settingsManager.getMaxRoutes()
-        val limitedRoutes = routes.take(maxRoutesConfig)
+        val limitedRoutes = routesToDisplay.take(maxRoutesConfig)
         if (!isMapLoaded) {
             pendingRoutes = limitedRoutes
             return
@@ -1283,34 +1294,10 @@ class MainActivity : ThemedActivity() {
         return earthRadiusMeters * 2 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1 - a))
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun renderNoActiveRoutesState(showingAddressFilterResults: Boolean) {
-        val dp = { value: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt() }
         currentActiveRoutes = mutableListOf()
         routesCardsContainer.removeAllViews()
-        val waitingCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = GradientDrawable().apply {
-                setColor(getColor(R.color.app_background))
-                cornerRadius = dp(8).toFloat()
-                setStroke(dp(2), getColor(R.color.app_accent))
-            }
-            layoutParams = LinearLayout.LayoutParams(dp(300), -2).apply { setMargins(0, 0, dp(8), 0) }
-        }
-        waitingCard.addView(TextView(this).apply {
-            text = if (showingAddressFilterResults) "📍 NENHUMA VIAGEM NA DIREÇÃO DO ENDEREÇO" else "🟢 AGUARDANDO SOLICITAÇÕES DO INDRIVE"
-            setTextColor(getColor(R.color.app_accent))
-            textSize = 12f
-            typeface = Typeface.DEFAULT_BOLD
-        })
-        waitingCard.addView(TextView(this).apply {
-            text = if (showingAddressFilterResults) "As viagens sem origem ou destino reconhecidos também são removidas."
-                else "Abra o aplicativo do inDrive lado a lado. O Leitor de Tela capturará automaticamente as corridas originais e flotará as rotas no mapa em tempo real."
-            setTextColor(getColor(R.color.app_secondary))
-            textSize = 11f
-            maxLines = 3
-        })
-        routesCardsContainer.addView(waitingCard)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             webView.evaluateJavascript("updateMultiRouteMap('[]')", null)
         } else {
