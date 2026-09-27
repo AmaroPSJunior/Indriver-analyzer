@@ -503,8 +503,10 @@ class MainActivity : ThemedActivity() {
         }
 
         titleRow.addView(titleText)
-        titleRow.addView(autoHideSwitch)
-        titleRow.addView(destinationDirectionFilterSwitch)
+        if (uiLayoutMode != "driver") {
+            titleRow.addView(autoHideSwitch)
+            titleRow.addView(destinationDirectionFilterSwitch)
+        }
         titleScrollView.addView(titleRow)
         val cardsToggle = Button(this).apply {
             text = if (cardsMinimized) "⌄" else "⌃"
@@ -533,6 +535,24 @@ class MainActivity : ThemedActivity() {
             addView(layoutButton, LinearLayout.LayoutParams(dp(48), dp(48)))
             addView(configButton, LinearLayout.LayoutParams(dp(48), dp(48)))
         })
+        if (uiLayoutMode == "driver") {
+            header.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(8), dp(4), dp(8), dp(4))
+                background = UiDesign.rounded(this@MainActivity, visual.raisedSurface, visual.radiusDp)
+                addView(TextView(this@MainActivity).apply {
+                    text = "💰/km"
+                    textSize = 12f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(visual.text)
+                    gravity = Gravity.CENTER
+                    layoutParams = LinearLayout.LayoutParams(-2, -1).apply { setMargins(0, 0, dp(4), 0) }
+                })
+                addView(autoHideSwitch, LinearLayout.LayoutParams(0, dp(56), 1f))
+                addView(destinationDirectionFilterSwitch, LinearLayout.LayoutParams(0, dp(56), 1.5f))
+            })
+        }
 
         accButton = Button(this).apply {
             text = "📋 Checklist de Permissões (Ativar Leitor)"
@@ -554,22 +574,35 @@ class MainActivity : ThemedActivity() {
         header.addView(cardsDivider)
 
         // --- Horizontal Scroll View for Multi-Route Cards ---
-        val scrollView = HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(4), 0, 0) }
+        val cardsScrollView: View = if (uiLayoutMode == "queue") {
+            ScrollView(this).apply {
+                isVerticalScrollBarEnabled = false
+                layoutParams = LinearLayout.LayoutParams(-1, 0, 1f).apply { setMargins(0, dp(4), 0, 0) }
+            }
+        } else {
+            HorizontalScrollView(this).apply {
+                isHorizontalScrollBarEnabled = false
+                layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(4), 0, 0) }
+            }
         }
 
         routesCardsContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+            orientation = if (uiLayoutMode == "queue") LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
         }
-        scrollView.addView(routesCardsContainer)
+        when (cardsScrollView) {
+            is ScrollView -> cardsScrollView.addView(routesCardsContainer, LinearLayout.LayoutParams(-1, -2))
+            is HorizontalScrollView -> cardsScrollView.addView(routesCardsContainer)
+        }
         // The expand/collapse control belongs to the cards area, aligned to its right.
         val cardsAreaRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        cardsAreaRow.addView(scrollView, LinearLayout.LayoutParams(0, -2, 1f))
-        cardsAreaRow.addView(cardsToggle, LinearLayout.LayoutParams(dp(48), dp(48)))
+        cardsAreaRow.addView(
+            cardsScrollView,
+            LinearLayout.LayoutParams(0, if (uiLayoutMode == "queue") -1 else -2, 1f)
+        )
+        cardsAreaRow.addView(cardsToggle, LinearLayout.LayoutParams(dp(48), if (uiLayoutMode == "queue") -1 else dp(48)))
         val cardsPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), dp(if (uiLayoutMode == "queue") 12 else 6), dp(10), dp(6))
@@ -577,14 +610,17 @@ class MainActivity : ThemedActivity() {
         }
         if (uiLayoutMode != "classic") {
             cardsPanel.addView(TextView(this).apply {
-                text = if (uiLayoutMode == "queue") "🚘 Corridas na fila" else "🚘 Próximas corridas"
-                textSize = if (uiLayoutMode == "queue") 18f else 14f
+                text = if (uiLayoutMode == "queue") "📋 Central de corridas" else "🚘 Próximas corridas"
+                textSize = if (uiLayoutMode == "queue") 19f else 14f
                 typeface = Typeface.DEFAULT_BOLD
                 setTextColor(visual.text)
                 setPadding(dp(4), dp(2), dp(4), dp(2))
             })
         }
-        cardsPanel.addView(cardsAreaRow)
+        cardsPanel.addView(
+            cardsAreaRow,
+            if (uiLayoutMode == "queue") LinearLayout.LayoutParams(-1, 0, 1f) else LinearLayout.LayoutParams(-1, -2)
+        )
 
         if (uiLayoutMode == "classic") header.addView(cardsPanel)
         root.addView(header)
@@ -604,8 +640,8 @@ class MainActivity : ThemedActivity() {
             "driver" -> root.addView(cardsPanel, LinearLayout.LayoutParams(-1, -2))
             "queue" -> {
                 root.removeView(webView)
-                root.addView(cardsPanel, LinearLayout.LayoutParams(-1, -2))
-                root.addView(webView, LinearLayout.LayoutParams(-1, 0, 1f))
+                root.addView(cardsPanel, LinearLayout.LayoutParams(-1, 0, 0.60f))
+                root.addView(webView, LinearLayout.LayoutParams(-1, 0, 0.40f))
             }
         }
 
@@ -614,9 +650,9 @@ class MainActivity : ThemedActivity() {
 
     private fun showLayoutSelectionDialog() {
         val proposals = listOf(
-            Triple("classic", "🌌 Aurora", "Azul-ciano, estrutura familiar e cards junto à área superior; mapa ocupa o restante da tela."),
-            Triple("driver", "🚗 Cabine", "Verde-petróleo, controles maiores e mapa amplo com cards fixos no rodapé."),
-            Triple("queue", "📋 Central da fila", "Azul de alto contraste, cards largos em destaque antes do mapa e valores fáceis de localizar.")
+            Triple("classic", "🌌 Aurora", "Mapa como painel principal, filtros e cards horizontais na faixa superior."),
+            Triple("driver", "🚗 Cabine", "Painel de filtros dedicado no topo, mapa amplo e faixa de corridas fixa no rodapé."),
+            Triple("queue", "📋 Central da fila", "Lista vertical de corridas em destaque e mapa em uma faixa própria abaixo.")
         )
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -648,25 +684,7 @@ class MainActivity : ThemedActivity() {
                 setTextColor(sample.secondary)
                 setPadding(0, dp(6), 0, dp(12))
             })
-            preview.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(12), dp(10), dp(12), dp(10))
-                background = UiDesign.rounded(this@MainActivity, sample.raisedSurface, sample.radiusDp)
-                addView(TextView(this@MainActivity).apply {
-                    text = "R$ 42,50"
-                    textSize = 18f
-                    typeface = Typeface.DEFAULT_BOLD
-                    setTextColor(sample.text)
-                    layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
-                })
-                addView(TextView(this@MainActivity).apply {
-                    text = "R$ 3,20/km"
-                    textSize = 14f
-                    typeface = Typeface.DEFAULT_BOLD
-                    setTextColor(sample.accent)
-                })
-            })
+            preview.addView(UiDesign.layoutPreview(this@MainActivity, id))
             preview.addView(Button(this).apply {
                 text = if (id == uiLayoutMode) "✓ Layout atual" else "Experimentar ${title.substringAfter(' ')}"
                 isEnabled = id != uiLayoutMode
@@ -1526,11 +1544,12 @@ class MainActivity : ThemedActivity() {
             val card = routesCardsContainer.getChildAt(index) as? LinearLayout ?: continue
             if (card.tag != "ride_card") continue
             card.layoutParams = (card.layoutParams as LinearLayout.LayoutParams).apply {
-                width = if (cardsMinimized) dp(150) else dp(when (uiLayoutMode) {
-                    "driver" -> 250
-                    "queue" -> 280
-                    else -> 230
-                })
+                width = if (uiLayoutMode == "queue") -1
+                    else dp(if (cardsMinimized) 150 else when (uiLayoutMode) {
+                        "driver" -> 270
+                        "queue" -> 280
+                        else -> 230
+                    })
             }
             card.setPadding(dp(10), dp(if (cardsMinimized) 4 else 8), dp(10), dp(if (cardsMinimized) 4 else 8))
             card.findViewWithTag<View>("card_badge")?.visibility = if (cardsMinimized) View.GONE else View.VISIBLE
@@ -1565,8 +1584,16 @@ class MainActivity : ThemedActivity() {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(10), dp(8), dp(10), dp(8))
                 background = UiDesign.rounded(this@MainActivity, visual.raisedSurface, visual.radiusDp, colorInt, 2)
-                layoutParams = LinearLayout.LayoutParams(dp(230), -2).apply {
-                    setMargins(0, 0, dp(8), 0)
+                layoutParams = LinearLayout.LayoutParams(
+                    if (uiLayoutMode == "queue") -1 else dp(when (uiLayoutMode) {
+                        "driver" -> 270
+                        "queue" -> 280
+                        else -> 230
+                    }),
+                    -2
+                ).apply {
+                    if (uiLayoutMode == "queue") setMargins(0, 0, 0, dp(8))
+                    else setMargins(0, 0, dp(8), 0)
                 }
             }
 

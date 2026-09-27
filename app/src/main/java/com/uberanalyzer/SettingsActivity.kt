@@ -141,9 +141,9 @@ class SettingsActivity : ThemedActivity() {
 
     private fun showDesignChooser() {
         val proposals = listOf(
-            Triple("classic", "🌌 Aurora", "Azul-ciano · estrutura familiar · cards junto aos filtros"),
-            Triple("driver", "🚗 Cabine", "Verde-petróleo · controles maiores · mapa amplo e cards no rodapé"),
-            Triple("queue", "📋 Central da fila", "Azul de alto contraste · cards largos antes do mapa · valores em destaque")
+            Triple("classic", "🌌 Aurora", "Mapa como painel principal · filtros e cards horizontais no topo"),
+            Triple("driver", "🚗 Cabine", "Filtros em painel próprio · mapa amplo · faixa de corridas no rodapé"),
+            Triple("queue", "📋 Central da fila", "Lista vertical ampla · mapa em painel separado abaixo")
         )
         val selected = UiDesign.selectedId(this)
         val density = resources.displayMetrics.density
@@ -171,27 +171,9 @@ class SettingsActivity : ThemedActivity() {
                 text = description
                 textSize = 14f
                 setTextColor(colors.secondary)
-                setPadding(0, dp(5), 0, dp(10))
+                setPadding(0, dp(5), 0, dp(7))
             })
-            card.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(10), dp(9), dp(10), dp(9))
-                background = UiDesign.rounded(this@SettingsActivity, colors.raisedSurface, colors.radiusDp)
-                addView(TextView(this@SettingsActivity).apply {
-                    text = "R$ 42,50\n3,8 km · 4,92 ⭐"
-                    textSize = 16f
-                    typeface = Typeface.DEFAULT_BOLD
-                    setTextColor(colors.text)
-                    layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
-                })
-                addView(TextView(this@SettingsActivity).apply {
-                    text = "R$ 3,20/km"
-                    textSize = 14f
-                    typeface = Typeface.DEFAULT_BOLD
-                    setTextColor(colors.accent)
-                })
-            })
+            card.addView(UiDesign.layoutPreview(this@SettingsActivity, id))
             card.addView(Button(this).apply {
                 text = if (id == selected) "Interface selecionada" else "Experimentar $name"
                 isEnabled = id != selected

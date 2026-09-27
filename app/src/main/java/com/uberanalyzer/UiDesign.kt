@@ -6,6 +6,9 @@ import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.view.View
 import android.view.WindowManager
+import android.view.Gravity
+import android.widget.LinearLayout
+import android.widget.TextView
 
 /** Color and surface tokens shared by the three comparable driver-oriented UI proposals. */
 object UiDesign {
@@ -91,6 +94,72 @@ object UiDesign {
             cornerRadius = radiusDp * context.resources.displayMetrics.density
             strokeColor?.let { setStroke((strokeDp * context.resources.displayMetrics.density).toInt(), it) }
         }
+
+    /** A compact, structural preview so the choices can be compared before applying one. */
+    fun layoutPreview(context: Context, id: String): View {
+        val p = paletteFor(context, id)
+        val density = context.resources.displayMetrics.density
+        val dp = { value: Int -> (value * density).toInt() }
+        val root = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(8), dp(7), dp(8), dp(7))
+            background = rounded(context, p.background, p.radiusDp, p.outline)
+            layoutParams = LinearLayout.LayoutParams(-1, dp(144))
+        }
+        fun textBlock(label: String, fill: Int, foreground: Int, height: Int, width: Int = -1): TextView =
+            TextView(context).apply {
+                text = label
+                gravity = Gravity.CENTER
+                textSize = 10f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                setTextColor(foreground)
+                background = rounded(context, fill, maxOf(4, p.radiusDp / 2))
+                layoutParams = LinearLayout.LayoutParams(width, dp(height)).apply {
+                    setMargins(dp(2), dp(2), dp(2), dp(2))
+                }
+            }
+        fun toolbar() {
+            root.addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                addView(textBlock("v1.0", p.surface, p.text, 24, 0).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, dp(24), 1f)
+                })
+                addView(textBlock("🎨", p.raisedSurface, p.accent, 24, dp(34)))
+                addView(textBlock("☰", p.raisedSurface, p.accent, 24, dp(34)))
+            })
+        }
+        fun mapPanel(weight: Float) {
+            root.addView(textBlock("🗺️ MAPA", p.raisedSurface, p.secondary, 0), LinearLayout.LayoutParams(-1, 0, weight))
+        }
+        fun cardRow(labels: List<String>, fullWidth: Boolean = false) {
+            val row = LinearLayout(context).apply {
+                orientation = if (fullWidth) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+            }
+            labels.forEach { label ->
+                row.addView(textBlock(label, p.surface, p.accent, if (fullWidth) 20 else 28, if (fullWidth) -1 else 0),
+                    if (fullWidth) LinearLayout.LayoutParams(-1, dp(22)) else LinearLayout.LayoutParams(0, dp(30), 1f))
+            }
+            root.addView(row)
+        }
+        toolbar()
+        when (id) {
+            "driver" -> {
+                root.addView(textBlock("💰/km       📍 Endereço", p.surface, p.text, 27))
+                mapPanel(1f)
+                cardRow(listOf("R$ 42,50", "R$ 31,00"))
+            }
+            "queue" -> {
+                cardRow(listOf("R$ 42,50 · topo", "R$ 31,00", "R$ 28,00"), fullWidth = true)
+                mapPanel(1f)
+            }
+            else -> {
+                root.addView(textBlock("💰/km       📍 Endereço", p.surface, p.text, 24))
+                cardRow(listOf("R$ 42,50", "R$ 31,00"))
+                mapPanel(1f)
+            }
+        }
+        return root
+    }
 
     fun applyWindow(activity: Activity) {
         val p = palette(activity)
