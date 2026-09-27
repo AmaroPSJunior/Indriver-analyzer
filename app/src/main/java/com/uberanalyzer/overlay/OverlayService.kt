@@ -80,6 +80,7 @@ class OverlayService : Service() {
     private fun showJsonPopup(i: Intent, r: ScoreRating) {
         hide()
         val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
+        val visual = com.uberanalyzer.UiDesign.palette(this)
         val screenWidth = resources.displayMetrics.widthPixels
         val popupWidth = (screenWidth * 0.90).toInt().coerceAtMost(dp(420))
 
@@ -102,9 +103,9 @@ class OverlayService : Service() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(16), dp(16), dp(16))
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#0F172A")) // Dark Navy Slate
-                cornerRadius = dp(16).toFloat()
-                setStroke(dp(2), Color.parseColor("#38BDF8")) // Cyan Accent border
+                setColor(visual.background)
+                cornerRadius = dp(visual.radiusDp).toFloat()
+                setStroke(dp(2), visual.accent)
             }
             elevation = dp(12).toFloat()
         }
@@ -118,7 +119,7 @@ class OverlayService : Service() {
 
         val titleView = TextView(this).apply {
             text = "⚡ Hierarquia de Nós ($rideCount elementos)"
-            setTextColor(Color.parseColor("#F8FAFC"))
+            setTextColor(visual.text)
             textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
@@ -126,7 +127,7 @@ class OverlayService : Service() {
 
         val closeBtn = TextView(this).apply {
             text = " ✖ "
-            setTextColor(Color.parseColor("#94A3B8"))
+            setTextColor(visual.secondary)
             textSize = 18f
             setPadding(dp(8), dp(4), dp(8), dp(4))
             setOnClickListener { hide() }
@@ -141,8 +142,8 @@ class OverlayService : Service() {
             orientation = LinearLayout.HORIZONTAL
             setPadding(dp(10), dp(8), dp(10), dp(8))
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#1E293B"))
-                cornerRadius = dp(8).toFloat()
+                setColor(visual.surface)
+                cornerRadius = dp(visual.radiusDp).toFloat()
             }
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(12)) }
         }
@@ -161,7 +162,7 @@ class OverlayService : Service() {
 
         statsRow.addView(TextView(this).apply {
             text = String.format(Locale.getDefault(), "R$ %.2f/km", pkm)
-            setTextColor(Color.parseColor("#38BDF8")) // Light cyan
+            setTextColor(visual.accent)
             textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
         })
@@ -173,15 +174,15 @@ class OverlayService : Service() {
             layoutParams = LinearLayout.LayoutParams(-1, dp(240))
             isFillViewport = true
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#020617")) // Deepest dark code canvas
-                cornerRadius = dp(8).toFloat()
+                setColor(visual.raisedSurface)
+                cornerRadius = dp(visual.radiusDp).toFloat()
             }
             setPadding(dp(10), dp(10), dp(10), dp(10))
         }
 
         val jsonTextView = TextView(this).apply {
             text = hierarchyText
-            setTextColor(Color.parseColor("#38BDF8")) // Light Cyan Hierarchy List
+            setTextColor(visual.accent)
             textSize = 11f
             typeface = Typeface.MONOSPACE
             setTextIsSelectable(true)
@@ -199,8 +200,8 @@ class OverlayService : Service() {
         val copyBtn = Button(this).apply {
             text = "📋 Copiar Hierarquia"
             textSize = 12f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#0284C7"))
+            setTextColor(visual.background)
+            setBackgroundColor(visual.accent)
             layoutParams = LinearLayout.LayoutParams(0, dp(42), 1f).apply { setMargins(0, 0, dp(6), 0) }
             setOnClickListener {
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -213,8 +214,8 @@ class OverlayService : Service() {
         val dismissBtn = Button(this).apply {
             text = "Fechar"
             textSize = 12f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#334155"))
+            setTextColor(visual.text)
+            setBackgroundColor(visual.surface)
             layoutParams = LinearLayout.LayoutParams(0, dp(42), 1f).apply { setMargins(dp(6), 0, 0, 0) }
             setOnClickListener { hide() }
         }
@@ -301,4 +302,3 @@ class OverlayService : Service() {
         hide()
     }
 }
-

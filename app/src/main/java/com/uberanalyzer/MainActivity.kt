@@ -216,6 +216,7 @@ class MainActivity : ThemedActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         supportActionBar?.hide()
+        UiDesign.applyWindow(this)
         settingsManager = com.uberanalyzer.settings.SettingsManager(this)
         settingsManager.syncMapInterestPoints()
         setContentView(buildUI())
@@ -358,6 +359,12 @@ class MainActivity : ThemedActivity() {
 
     override fun onResume() {
         super.onResume()
+        UiDesign.applyWindow(this)
+        val savedLayout = UiDesign.selectedId(this)
+        if (::webView.isInitialized && savedLayout != uiLayoutMode) {
+            applyUiLayout(savedLayout)
+            return
+        }
         updateStatusView()
         if (::autoHideSwitch.isInitialized) {
             val isEnabled = settingsManager.getAutoHideEnabled()
@@ -386,10 +393,11 @@ class MainActivity : ThemedActivity() {
 
     private fun buildUI(): View {
         val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
+        val visual = UiDesign.palette(this@MainActivity)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(getColor(R.color.app_background))
+            setBackgroundColor(visual.background)
             layoutParams = LinearLayout.LayoutParams(-1, -1)
         }
 
@@ -402,9 +410,7 @@ class MainActivity : ThemedActivity() {
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(8))
-            background = GradientDrawable().apply {
-                setColor(getColor(R.color.app_surface))
-            }
+            background = UiDesign.rounded(this@MainActivity, visual.surface, visual.radiusDp)
         }
 
         val titleScrollView = HorizontalScrollView(this).apply {
@@ -419,7 +425,7 @@ class MainActivity : ThemedActivity() {
 
         titleText = TextView(this).apply {
             text = getAppVersionName()
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(visual.text)
             textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, 0, dp(8), 0)
@@ -429,7 +435,10 @@ class MainActivity : ThemedActivity() {
             text = ""
             contentDescription = "Ativar ou desativar o filtro de valor por quilômetro"
             textSize = 11f
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(visual.text)
+            minHeight = dp(if (uiLayoutMode == "driver") 52 else 40)
+            thumbTintList = android.content.res.ColorStateList.valueOf(visual.accent)
+            trackTintList = android.content.res.ColorStateList.valueOf(visual.outline)
             isChecked = settingsManager.getAutoHideEnabled()
             setPadding(dp(6), dp(2), dp(6), dp(2))
             layoutParams = LinearLayout.LayoutParams(-2, -2).apply {
@@ -450,7 +459,10 @@ class MainActivity : ThemedActivity() {
             text = "📍 Endereço"
             contentDescription = "Filtrar viagens pela direção do endereço selecionado"
             textSize = 11f
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(visual.text)
+            minHeight = dp(if (uiLayoutMode == "driver") 52 else 40)
+            thumbTintList = android.content.res.ColorStateList.valueOf(visual.accent)
+            trackTintList = android.content.res.ColorStateList.valueOf(visual.outline)
             isChecked = settingsManager.getDestinationDirectionFilterEnabled()
             setPadding(dp(6), dp(2), dp(6), dp(2))
             layoutParams = LinearLayout.LayoutParams(-2, -2).apply { setMargins(dp(4), 0, 0, 0) }
@@ -470,8 +482,8 @@ class MainActivity : ThemedActivity() {
             contentDescription = "Abrir configurações"
             tooltipText = contentDescription
             textSize = 24f
-            setTextColor(getColor(R.color.app_text))
-            setBackgroundColor(Color.TRANSPARENT)
+            setTextColor(visual.accent)
+            background = UiDesign.rounded(this@MainActivity, visual.raisedSurface, visual.radiusDp, visual.outline)
             minWidth = 0
             minimumWidth = 0
             setPadding(0, 0, 0, 0)
@@ -483,8 +495,8 @@ class MainActivity : ThemedActivity() {
             contentDescription = "Escolher layout da tela"
             tooltipText = contentDescription
             textSize = 20f
-            setTextColor(getColor(R.color.app_text))
-            setBackgroundColor(Color.TRANSPARENT)
+            setTextColor(visual.accent)
+            background = UiDesign.rounded(this@MainActivity, visual.raisedSurface, visual.radiusDp, visual.outline)
             minWidth = 0
             minimumWidth = 0
             setOnClickListener { showLayoutSelectionDialog() }
@@ -499,10 +511,10 @@ class MainActivity : ThemedActivity() {
             contentDescription = if (cardsMinimized) "Expandir cards" else "Recolher cards"
             tooltipText = contentDescription
             textSize = 28f
-            setBackgroundColor(Color.TRANSPARENT)
+            background = UiDesign.rounded(this@MainActivity, visual.raisedSurface, visual.radiusDp, visual.outline)
             minWidth = 0
             minimumWidth = 0
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(visual.accent)
             setPadding(dp(8), dp(4), dp(8), dp(4))
             setOnClickListener {
                 cardsMinimized = !cardsMinimized
@@ -525,15 +537,15 @@ class MainActivity : ThemedActivity() {
         accButton = Button(this).apply {
             text = "📋 Checklist de Permissões (Ativar Leitor)"
             textSize = 11f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#3B82F6"))
+            setTextColor(visual.background)
+            setBackgroundColor(visual.accent)
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(2), 0, dp(4)) }
             setOnClickListener { showPermissionChecklistDialog() }
         }
         header.addView(accButton)
 
         val cardsDivider = View(this).apply {
-            setBackgroundColor(getColor(R.color.app_input))
+            setBackgroundColor(visual.outline)
             contentDescription = "Divisor entre a barra superior e os cards"
             layoutParams = LinearLayout.LayoutParams(-1, dp(1)).apply {
                 setMargins(0, dp(4), 0, dp(2))
@@ -560,15 +572,15 @@ class MainActivity : ThemedActivity() {
         cardsAreaRow.addView(cardsToggle, LinearLayout.LayoutParams(dp(48), dp(48)))
         val cardsPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(if (uiLayoutMode == "queue") 10 else 4), dp(10), dp(6))
-            setBackgroundColor(getColor(R.color.app_surface))
+            setPadding(dp(10), dp(if (uiLayoutMode == "queue") 12 else 6), dp(10), dp(6))
+            background = UiDesign.rounded(this@MainActivity, visual.surface, visual.radiusDp, visual.outline)
         }
         if (uiLayoutMode != "classic") {
             cardsPanel.addView(TextView(this).apply {
                 text = if (uiLayoutMode == "queue") "🚘 Corridas na fila" else "🚘 Próximas corridas"
-                textSize = if (uiLayoutMode == "queue") 16f else 13f
+                textSize = if (uiLayoutMode == "queue") 18f else 14f
                 typeface = Typeface.DEFAULT_BOLD
-                setTextColor(getColor(R.color.app_text))
+                setTextColor(visual.text)
                 setPadding(dp(4), dp(2), dp(4), dp(2))
             })
         }
@@ -580,7 +592,7 @@ class MainActivity : ThemedActivity() {
         // --- Interactive Map View ---
         webView = WebView(this).apply {
             layoutParams = LinearLayout.LayoutParams(-1, 0, 1f)
-            setBackgroundColor(getColor(R.color.app_background))
+            setBackgroundColor(visual.background)
         }
         webView.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
             if (isMapLoaded && (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop)) {
@@ -601,26 +613,81 @@ class MainActivity : ThemedActivity() {
     }
 
     private fun showLayoutSelectionDialog() {
-        val layouts = listOf(
-            "classic" to "📱 Clássico — tela atual, cards no cabeçalho",
-            "driver" to "🚗 Motorista — mapa em destaque, cards fixos abaixo",
-            "queue" to "📋 Fila — cards ampliados acima do mapa"
+        val proposals = listOf(
+            Triple("classic", "🌌 Aurora", "Azul-ciano, estrutura familiar e cards junto à área superior; mapa ocupa o restante da tela."),
+            Triple("driver", "🚗 Cabine", "Verde-petróleo, controles maiores e mapa amplo com cards fixos no rodapé."),
+            Triple("queue", "📋 Central da fila", "Azul de alto contraste, cards largos em destaque antes do mapa e valores fáceis de localizar.")
         )
-        val selected = layouts.indexOfFirst { it.first == uiLayoutMode }.coerceAtLeast(0)
-        val options = layouts.map { it.second }.toTypedArray()
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("🎨 Escolha o layout")
-            .setSingleChoiceItems(options, selected) { chooser, which ->
-                chooser.dismiss()
-                val choice = layouts[which]
-                if (choice.first == uiLayoutMode) return@setSingleChoiceItems
-                androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle("Mudar para ${choice.second.substringBefore(" —")}? ")
-                    .setMessage("A tela será reorganizada. Seus filtros, corridas capturadas e configurações serão mantidos.")
-                    .setNegativeButton("Cancelar", null)
-                    .setPositiveButton("Mudar layout") { _, _ -> applyUiLayout(choice.first) }
-                    .show()
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(8), 0, dp(8))
+        }
+        val scroll = ScrollView(this).apply {
+            setPadding(dp(18), 0, dp(18), 0)
+            addView(content)
+        }
+        proposals.forEach { (id, title, description) ->
+            val sample = UiDesign.paletteFor(this@MainActivity, id)
+            val preview = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(16), dp(14), dp(16), dp(14))
+                background = UiDesign.rounded(this@MainActivity, sample.surface, sample.radiusDp, sample.outline)
+                isClickable = true
+                isFocusable = true
+                layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) }
             }
+            preview.addView(TextView(this).apply {
+                text = title
+                textSize = 18f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(sample.text)
+            })
+            preview.addView(TextView(this).apply {
+                text = description
+                textSize = 14f
+                setTextColor(sample.secondary)
+                setPadding(0, dp(6), 0, dp(12))
+            })
+            preview.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                background = UiDesign.rounded(this@MainActivity, sample.raisedSurface, sample.radiusDp)
+                addView(TextView(this@MainActivity).apply {
+                    text = "R$ 42,50"
+                    textSize = 18f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(sample.text)
+                    layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+                })
+                addView(TextView(this@MainActivity).apply {
+                    text = "R$ 3,20/km"
+                    textSize = 14f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(sample.accent)
+                })
+            })
+            preview.addView(Button(this).apply {
+                text = if (id == uiLayoutMode) "✓ Layout atual" else "Experimentar ${title.substringAfter(' ')}"
+                isEnabled = id != uiLayoutMode
+                setTextColor(if (isEnabled) sample.background else sample.secondary)
+                background = UiDesign.rounded(this@MainActivity, sample.accent, sample.radiusDp)
+                layoutParams = LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(12) }
+                setOnClickListener {
+                    if (id == uiLayoutMode) return@setOnClickListener
+                    androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Usar ${title.substringAfter(' ')}?")
+                        .setMessage("A tela inteira será redesenhada com esta proposta. Filtros, corridas, pontos do mapa e configurações serão mantidos. Você pode voltar e comparar as outras opções quando quiser.")
+                        .setNegativeButton("Continuar comparando", null)
+                        .setPositiveButton("Confirmar e aplicar") { _, _ -> applyUiLayout(id) }
+                        .show()
+                }
+            })
+            content.addView(preview)
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("🎨 Compare as propostas visuais")
+            .setView(scroll)
             .setNegativeButton("Fechar", null)
             .show()
     }
@@ -628,6 +695,7 @@ class MainActivity : ThemedActivity() {
     private fun applyUiLayout(mode: String) {
         if (mode !in listOf("classic", "driver", "queue") || mode == uiLayoutMode) return
         getSharedPreferences("map_layout", MODE_PRIVATE).edit().putString("main_ui_layout", mode).apply()
+        UiDesign.applyWindow(this)
         val oldMap = if (::webView.isInitialized) webView else null
         pendingRoutes = latestCapturedRoutes
         isMapLoaded = false
@@ -641,6 +709,10 @@ class MainActivity : ThemedActivity() {
         setupWebView()
         updateStatusView()
     }
+
+    private fun dp(value: Int): Int = TypedValue.applyDimension(
+        TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics
+    ).toInt()
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun setupWebView() {
@@ -718,6 +790,12 @@ class MainActivity : ThemedActivity() {
         }
         webView.webViewClient = WebViewClient()
         val mapProvidersJs = assets.open("map-providers.js").bufferedReader().use { it.readText() }
+        val mapPalette = UiDesign.palette(this)
+        val cssColor = { value: Int -> String.format(Locale.US, "#%06X", value and 0xFFFFFF) }
+        val mapBgCss = cssColor(mapPalette.background)
+        val mapSurfaceCss = cssColor(mapPalette.surface)
+        val mapTextCss = cssColor(mapPalette.text)
+        val mapAccentCss = cssColor(mapPalette.accent)
         isMapLoaded = false
 
         val mapHtml = """
@@ -727,14 +805,14 @@ class MainActivity : ThemedActivity() {
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
                 <style>
-                    #map-status { position: absolute; top: 8px; left: 8px; right: 8px; z-index: 1000; padding: 8px; border-radius: 6px; background: #FFFFFF; color: #0F172A; font: 13px sans-serif; }
-                    body, html, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #0F172A; }
-                    .leaflet-popup-content-wrapper { background: #1E293B; color: #F8FAFC; border-radius: 8px; border: 1px solid #38BDF8; font-family: sans-serif; font-size: 13px; }
+                    #map-status { position: absolute; top: 8px; left: 8px; right: 8px; z-index: 1000; padding: 8px; border-radius: 6px; background: $mapSurfaceCss; color: $mapTextCss; font: 13px sans-serif; }
+                    body, html, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: $mapBgCss; }
+                    .leaflet-popup-content-wrapper { background: $mapSurfaceCss; color: $mapTextCss; border-radius: 8px; border: 1px solid $mapAccentCss; font-family: sans-serif; font-size: 13px; }
                     /* Only OSM base tiles are filtered; route colors and markers stay intact. */
                     .osm-dark-tiles { filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9); }
-                    .leaflet-control-attribution { background: #1E293B !important; color: #F8FAFC; }
-                    .leaflet-control-attribution a { color: #7DD3FC; }
-                    .leaflet-popup-tip { background: #1E293B; }
+                    .leaflet-control-attribution { background: $mapSurfaceCss !important; color: $mapTextCss; }
+                    .leaflet-control-attribution a { color: $mapAccentCss; }
+                    .leaflet-popup-tip { background: $mapSurfaceCss; }
                     .custom-badge {
                         width: 32px; height: 32px; border-radius: 50%;
                         display: flex; align-items: center; justify-content: center;
@@ -746,8 +824,8 @@ class MainActivity : ThemedActivity() {
                     }
                     .ride-price-pill {
                         margin-top: 3px;
-                        background: #0F172A;
-                        color: #F8FAFC;
+                        background: $mapSurfaceCss;
+                        color: $mapTextCss;
                         font-size: 11px;
                         font-weight: 800;
                         padding: 2px 8px;
@@ -774,8 +852,8 @@ class MainActivity : ThemedActivity() {
                         background: #DC2626; color: #FFFFFF;
                         box-shadow: 0 2px 4px rgba(0,0,0,0.6);
                     }
-                ${if ((resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) != android.content.res.Configuration.UI_MODE_NIGHT_YES) "@media all" else "@media not all"} {
-                        body, html, #map { background: #F8FAFC; }
+                ${if (UiDesign.selectedId(this) == "queue") "@media all" else "@media not all"} {
+                        body, html, #map { background: $mapBgCss; }
                         .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #FFFFFF; color: #0F172A; }
                         .ride-price-pill { background: #FFFFFF; color: #0F172A; }
                     }
@@ -1171,7 +1249,7 @@ class MainActivity : ThemedActivity() {
         for (i in 0 until points.length()) {
             val p = points.optJSONObject(i) ?: continue
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            val label = TextView(this).apply { text = (p.optString("icon","📍") + " " + p.optString("name","Ponto")); setTextColor(getColor(R.color.app_text)); layoutParams = LinearLayout.LayoutParams(0,-2,1f) }
+            val label = TextView(this).apply { text = (p.optString("icon","📍") + " " + p.optString("name","Ponto")); setTextColor(UiDesign.palette(this@MainActivity).text); layoutParams = LinearLayout.LayoutParams(0,-2,1f) }
             val toggle = androidx.appcompat.widget.SwitchCompat(this).apply { isChecked = p.optBoolean("visible", true) }
             val remove = Button(this).apply { text = "✕"; setOnClickListener { points.remove(i); settingsManager.setMapInterestPoints(points.toString()); dialog?.dismiss(); showInterestPointsDialog() } }
             toggle.setOnCheckedChangeListener { _, checked -> p.put("visible", checked); settingsManager.setMapInterestPoints(points.toString()); updateInterestPointsOnMap() }
@@ -1198,7 +1276,7 @@ class MainActivity : ThemedActivity() {
 
         content.addView(TextView(this).apply {
             text = "Escolha um endereço salvo ou cadastre outro. As viagens precisam ter origem e destino reconhecidos."
-            setTextColor(getColor(R.color.app_secondary))
+            setTextColor(UiDesign.palette(this@MainActivity).secondary)
             textSize = 13f
             setPadding(0, 0, 0, dp(8))
         })
@@ -1210,7 +1288,7 @@ class MainActivity : ThemedActivity() {
             val option = RadioButton(this).apply {
                 id = View.generateViewId()
                 text = address
-                setTextColor(getColor(R.color.app_text))
+                setTextColor(UiDesign.palette(this@MainActivity).text)
                 textSize = 14f
                 isChecked = address.equals(settingsManager.getSelectedDestinationFilterAddress(), ignoreCase = true)
             }
@@ -1220,7 +1298,7 @@ class MainActivity : ThemedActivity() {
         if (savedAddresses.isEmpty()) {
             addressGroup.addView(TextView(this).apply {
                 text = "Ainda não há endereços salvos. Cadastre o primeiro abaixo."
-                setTextColor(getColor(R.color.app_secondary))
+                setTextColor(UiDesign.palette(this@MainActivity).secondary)
                 textSize = 13f
                 setPadding(0, dp(4), 0, dp(8))
             })
@@ -1229,16 +1307,16 @@ class MainActivity : ThemedActivity() {
 
         content.addView(TextView(this).apply {
             text = "Novo endereço"
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(UiDesign.palette(this@MainActivity).text)
             textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, dp(8), 0, dp(4))
         })
         val newAddressInput = EditText(this).apply {
             hint = "Digite o endereço de referência"
-            setTextColor(getColor(R.color.app_text))
-            setHintTextColor(getColor(R.color.app_secondary))
-            setBackgroundColor(getColor(R.color.app_surface))
+            setTextColor(UiDesign.palette(this@MainActivity).text)
+            setHintTextColor(UiDesign.palette(this@MainActivity).secondary)
+            setBackgroundColor(UiDesign.palette(this@MainActivity).surface)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             setPadding(dp(12), dp(8), dp(12), dp(8))
         }
@@ -1312,7 +1390,7 @@ class MainActivity : ThemedActivity() {
             routesCardsContainer.removeAllViews()
             routesCardsContainer.addView(TextView(this).apply {
                 text = "⏳ Conferindo origem e destino..."
-                setTextColor(getColor(R.color.app_secondary))
+                setTextColor(UiDesign.palette(this@MainActivity).secondary)
                 textSize = 12f
                 setPadding(dp(10), dp(8), dp(10), dp(8))
             })
@@ -1468,6 +1546,7 @@ class MainActivity : ThemedActivity() {
 
     private fun renderCardsAndMapUi(limitedRoutes: List<RouteData>, jsRoutesArray: JSONArray) {
         val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
+        val visual = UiDesign.palette(this@MainActivity)
         routesCardsContainer.removeAllViews()
         val minKm = settingsManager.getMinKmValue().toDouble()
 
@@ -1485,11 +1564,7 @@ class MainActivity : ThemedActivity() {
                 tag = "ride_card"
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(10), dp(8), dp(10), dp(8))
-                background = GradientDrawable().apply {
-                    setColor(getColor(R.color.app_background))
-                    cornerRadius = dp(8).toFloat()
-                    setStroke(dp(2), colorInt)
-                }
+                background = UiDesign.rounded(this@MainActivity, visual.raisedSurface, visual.radiusDp, colorInt, 2)
                 layoutParams = LinearLayout.LayoutParams(dp(230), -2).apply {
                     setMargins(0, 0, dp(8), 0)
                 }
@@ -1503,7 +1578,7 @@ class MainActivity : ThemedActivity() {
             val badge = TextView(this).apply {
                 tag = "card_badge"
                 text = if (index == 0) "TOPO" else "FILA"
-                setTextColor(Color.parseColor("#0F172A"))
+                setTextColor(visual.background)
                 textSize = 11f
                 typeface = Typeface.DEFAULT_BOLD
                 setPadding(dp(6), dp(2), dp(6), dp(2))
@@ -1530,7 +1605,7 @@ class MainActivity : ThemedActivity() {
             card.addView(TextView(this).apply {
                 tag = "card_compact_metric"
                 text = compactValuePerKm?.let { String.format(Locale.getDefault(), "R$ %.2f/km", it) } ?: "R$ —/km"
-                setTextColor(getColor(R.color.app_text))
+                setTextColor(visual.text)
                 textSize = 12f
                 typeface = Typeface.DEFAULT_BOLD
             })
@@ -1549,7 +1624,7 @@ class MainActivity : ThemedActivity() {
 
             val passName = TextView(this).apply {
                 text = if (route.passenger.isNotBlank()) route.passenger else "Passageiro inDrive"
-                setTextColor(getColor(R.color.app_text))
+                setTextColor(visual.text)
                 textSize = 12f
                 typeface = Typeface.DEFAULT_BOLD
                 maxLines = 1
@@ -1774,17 +1849,17 @@ class MainActivity : ThemedActivity() {
         if (!isMapLoaded) return
         val provider = org.json.JSONObject.quote(settingsManager.getMapProvider())
         val key = org.json.JSONObject.quote(settingsManager.getCartoMapKey())
-        val darkMode = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        val darkMode = android.graphics.Color.luminance(UiDesign.palette(this).background) < 0.5f
         webView.evaluateJavascript("setMapProvider($provider, $key, $darkMode)", null)
     }
 
     private fun showMapSettingsDialog() {
         val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
-        
+        val visual = UiDesign.palette(this@MainActivity)
         var dialog: androidx.appcompat.app.AlertDialog? = null
 
         val scrollContainer = ScrollView(this).apply {
-            setBackgroundColor(getColor(R.color.app_background))
+            setBackgroundColor(visual.background)
         }
 
         val dialogView = LinearLayout(this).apply {
@@ -1795,11 +1870,22 @@ class MainActivity : ThemedActivity() {
         val title = TextView(this).apply {
             text = "⚙️ Configurações & Ferramentas"
             textSize = 18f
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(visual.text)
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, 0, 0, dp(14))
         }
         dialogView.addView(title)
+        dialogView.addView(Button(this).apply {
+            text = "🎨 Comparar os 3 layouts completos"
+            textSize = 15f
+            setTextColor(visual.background)
+            background = UiDesign.rounded(this@MainActivity, visual.accent, visual.radiusDp)
+            layoutParams = LinearLayout.LayoutParams(-1, dp(54)).apply { bottomMargin = dp(12) }
+            setOnClickListener {
+                dialog?.dismiss()
+                showLayoutSelectionDialog()
+            }
+        })
         dialogView.addView(Button(this).apply {
             text = "⬇️ Atualizar aplicativo"
             setOnClickListener {
@@ -1814,7 +1900,7 @@ class MainActivity : ThemedActivity() {
 
         dialogView.addView(TextView(this).apply {
             text = "🎨 Aparência do aplicativo e do mapa"
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(visual.text)
             textSize = 16f
         })
         val themeGroup = RadioGroup(this)
@@ -1823,7 +1909,7 @@ class MainActivity : ThemedActivity() {
                 id = View.generateViewId()
                 tag = mode
                 text = label
-                setTextColor(getColor(R.color.app_text))
+                setTextColor(visual.text)
                 isChecked = settingsManager.getThemeMode() == mode
             })
         }
@@ -1841,7 +1927,7 @@ class MainActivity : ThemedActivity() {
         val providerNames = listOf("OpenStreetMap — grátis, sem chave", "OpenFreeMap — grátis, sem chave", "CARTO — mapa claro/escuro")
         dialogView.addView(TextView(this).apply {
             text = "🗺️ Provedor do mapa"
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(UiDesign.palette(this@MainActivity).text)
             textSize = 16f
         })
         val providerGroup = android.widget.RadioGroup(this)
@@ -1850,14 +1936,14 @@ class MainActivity : ThemedActivity() {
                 id = android.view.View.generateViewId()
                 tag = provider
                 text = providerNames[index]
-                setTextColor(getColor(R.color.app_text))
+                setTextColor(UiDesign.palette(this@MainActivity).text)
                 isChecked = settingsManager.getMapProvider() == provider
             })
         }
         dialogView.addView(providerGroup)
         dialogView.addView(TextView(this).apply {
             text = "Se o mapa atingir o limite ou ficar indisponível, escolha outro e toque em Aplicar. Serviços gratuitos têm políticas de uso e podem ficar indisponíveis."
-            setTextColor(getColor(R.color.app_secondary))
+            setTextColor(UiDesign.palette(this@MainActivity).secondary)
             textSize = 12f
         })
         dialogView.addView(Button(this).apply {
@@ -1875,7 +1961,7 @@ class MainActivity : ThemedActivity() {
         val toolsLabel = TextView(this).apply {
             text = "🛠️ FERRAMENTAS & ATALHOS"
             textSize = 12f
-            setTextColor(getColor(R.color.app_accent))
+            setTextColor(UiDesign.palette(this@MainActivity).accent)
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, 0, 0, dp(8))
         }
@@ -1885,9 +1971,9 @@ class MainActivity : ThemedActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(12), dp(12), dp(12))
             background = GradientDrawable().apply {
-                setColor(getColor(R.color.app_surface))
+                setColor(UiDesign.palette(this@MainActivity).surface)
                 cornerRadius = dp(10).toFloat()
-                setStroke(dp(1), Color.parseColor("#334155"))
+                setStroke(dp(1), visual.outline)
             }
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(16)) }
         }
@@ -1895,8 +1981,8 @@ class MainActivity : ThemedActivity() {
         val jsonBtn = Button(this).apply {
             text = "📜 Hierarquia de Acessibilidade"
             textSize = 13f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#059669"))
+            setTextColor(visual.background)
+            setBackgroundColor(visual.accent)
             setPadding(dp(12), dp(8), dp(12), dp(8))
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) }
             setOnClickListener {
@@ -1908,8 +1994,8 @@ class MainActivity : ThemedActivity() {
         val permBtn = Button(this).apply {
             text = "📋 Checklist de Permissões"
             textSize = 13f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#0284C7"))
+            setTextColor(visual.background)
+            setBackgroundColor(visual.accent)
             setPadding(dp(12), dp(8), dp(12), dp(8))
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) }
             setOnClickListener {
@@ -1921,8 +2007,8 @@ class MainActivity : ThemedActivity() {
         val splitBtn = Button(this).apply {
             text = "📱 Dividir Tela com inDrive"
             textSize = 13f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#8B5CF6"))
+            setTextColor(visual.background)
+            setBackgroundColor(visual.accent)
             setPadding(dp(12), dp(8), dp(12), dp(8))
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) }
             setOnClickListener {
@@ -1934,8 +2020,8 @@ class MainActivity : ThemedActivity() {
         val advSettingsBtn = Button(this).apply {
             text = "🎨 Metas de Valores & Cores Avançadas"
             textSize = 12f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#4F46E5"))
+            setTextColor(visual.background)
+            setBackgroundColor(visual.accent)
             setPadding(dp(12), dp(8), dp(12), dp(8))
             layoutParams = LinearLayout.LayoutParams(-1, -2)
             setOnClickListener {
@@ -1954,7 +2040,7 @@ class MainActivity : ThemedActivity() {
         val mapLabel = TextView(this).apply {
             text = "🗺️ EXIBIÇÃO DO MAPA & CARDS"
             textSize = 12f
-            setTextColor(getColor(R.color.app_accent))
+            setTextColor(UiDesign.palette(this@MainActivity).accent)
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, 0, 0, dp(8))
         }
@@ -1963,7 +2049,7 @@ class MainActivity : ThemedActivity() {
         val maxRoutesText = TextView(this).apply {
             text = "Quantidade de Rotas no Mapa: ${settingsManager.getMaxRoutes()} (Máximo 4)"
             textSize = 13f
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(UiDesign.palette(this@MainActivity).text)
             setPadding(0, dp(4), 0, dp(6))
         }
         dialogView.addView(maxRoutesText)
@@ -1979,8 +2065,8 @@ class MainActivity : ThemedActivity() {
             val btn = Button(this).apply {
                 text = "$count rotas"
                 textSize = 11f
-                setTextColor(Color.WHITE)
-                setBackgroundColor(if (currentMax == count) getColor(R.color.app_accent) else Color.parseColor("#334155"))
+                setTextColor(if (currentMax == count) visual.background else visual.text)
+                setBackgroundColor(if (currentMax == count) visual.accent else visual.outline)
                 setPadding(dp(8), dp(4), dp(8), dp(4))
                 layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply {
                     setMargins(dp(3), 0, dp(3), 0)
@@ -1991,7 +2077,9 @@ class MainActivity : ThemedActivity() {
                     for (i in 0 until buttonsRow.childCount) {
                         val b = buttonsRow.getChildAt(i) as? Button
                         val valStr = b?.text?.toString() ?: ""
-                        b?.setBackgroundColor(if (valStr.startsWith("$currentMax ")) getColor(R.color.app_accent) else Color.parseColor("#334155"))
+                        val active = valStr.startsWith("$currentMax ")
+                        b?.setBackgroundColor(if (active) visual.accent else visual.outline)
+                        b?.setTextColor(if (active) visual.background else visual.text)
                     }
                 }
             }
@@ -2001,7 +2089,7 @@ class MainActivity : ThemedActivity() {
 
         val showPhotoCheck = android.widget.CheckBox(this).apply {
             text = "📸 Exibir Foto do Usuário no Ponto A (Embarque)"
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(UiDesign.palette(this@MainActivity).text)
             textSize = 13f
             isChecked = settingsManager.getShowPassengerPhoto()
             setPadding(dp(8), dp(6), dp(8), dp(6))
@@ -2010,7 +2098,7 @@ class MainActivity : ThemedActivity() {
 
         val showNameCheck = android.widget.CheckBox(this).apply {
             text = "👤 Exibir Nome do Usuário logo abaixo da Foto"
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(UiDesign.palette(this@MainActivity).text)
             textSize = 13f
             isChecked = settingsManager.getShowPassengerName()
             setPadding(dp(8), dp(6), dp(8), dp(6))
@@ -2019,7 +2107,7 @@ class MainActivity : ThemedActivity() {
 
         val showMetricsCheck = android.widget.CheckBox(this).apply {
             text = "📊 Exibir Métricas e R$/km nos Cards"
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(UiDesign.palette(this@MainActivity).text)
             textSize = 13f
             isChecked = settingsManager.getShowRouteMetrics()
             setPadding(dp(8), dp(6), dp(8), dp(6))
@@ -2030,7 +2118,7 @@ class MainActivity : ThemedActivity() {
         val kmLabel = TextView(this).apply {
             text = "💰 REGRAS DE VALOR MÍNIMO E OCULTAÇÃO"
             textSize = 12f
-            setTextColor(getColor(R.color.app_accent))
+            setTextColor(UiDesign.palette(this@MainActivity).accent)
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, dp(12), 0, dp(6))
         }
@@ -2039,15 +2127,15 @@ class MainActivity : ThemedActivity() {
         val kmInputLabel = TextView(this).apply {
             text = "Valor Mínimo R$/KM para Ocultar (ex: 2.00):"
             textSize = 13f
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(UiDesign.palette(this@MainActivity).text)
             setPadding(0, dp(2), 0, dp(4))
         }
         dialogView.addView(kmInputLabel)
 
         val minKmInput = EditText(this).apply {
             setText(String.format(Locale.US, "%.2f", settingsManager.getMinKmValue()))
-            setTextColor(getColor(R.color.app_text))
-            setBackgroundColor(getColor(R.color.app_surface))
+            setTextColor(UiDesign.palette(this@MainActivity).text)
+            setBackgroundColor(UiDesign.palette(this@MainActivity).surface)
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             setPadding(dp(12), dp(8), dp(12), dp(8))
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) }
@@ -2056,7 +2144,7 @@ class MainActivity : ThemedActivity() {
 
         val autoHideCheck = android.widget.CheckBox(this).apply {
             text = "⚡ Ativar Auto-Ocultar automático para viagens abaixo do valor R$/km mínimo"
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(UiDesign.palette(this@MainActivity).text)
             textSize = 13f
             isChecked = settingsManager.getAutoHideEnabled()
             setPadding(dp(8), dp(4), dp(8), dp(6))
@@ -2065,7 +2153,7 @@ class MainActivity : ThemedActivity() {
 
         val confirmHideCheck = android.widget.CheckBox(this).apply {
             text = "⚠️ Pedir confirmação ao ocultar manualmente viagens com valor menor que a meta (R$/km)"
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(UiDesign.palette(this@MainActivity).text)
             textSize = 13f
             isChecked = settingsManager.getConfirmHideBelowMinKm()
             setPadding(dp(8), dp(4), dp(8), dp(12))
@@ -2075,15 +2163,15 @@ class MainActivity : ThemedActivity() {
         val highProfitLabel = TextView(this).apply {
             text = "🔔 Valor Mínimo R$/KM para Alerta Sonoro de Alta Lucratividade (ex: 4.00):"
             textSize = 13f
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(UiDesign.palette(this@MainActivity).text)
             setPadding(0, dp(6), 0, dp(4))
         }
         dialogView.addView(highProfitLabel)
 
         val highProfitKmInput = EditText(this).apply {
             setText(String.format(Locale.US, "%.2f", settingsManager.getHighProfitAlertKm()))
-            setTextColor(getColor(R.color.app_text))
-            setBackgroundColor(getColor(R.color.app_surface))
+            setTextColor(UiDesign.palette(this@MainActivity).text)
+            setBackgroundColor(UiDesign.palette(this@MainActivity).surface)
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             setPadding(dp(12), dp(8), dp(12), dp(8))
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(12)) }
@@ -2149,18 +2237,19 @@ class MainActivity : ThemedActivity() {
         activePermissionDialog?.dismiss()
 
         val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
+        val visual = UiDesign.palette(this)
 
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(16), dp(16), dp(16))
-            setBackgroundColor(getColor(R.color.app_background))
+            setBackgroundColor(UiDesign.palette(this@MainActivity).background)
         }
 
         // Title & Header
         val titleView = TextView(this).apply {
             text = "🛡️ Checklist de Permissões"
             textSize = 18f
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(UiDesign.palette(this@MainActivity).text)
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, 0, 0, dp(4))
         }
@@ -2169,7 +2258,7 @@ class MainActivity : ThemedActivity() {
         val subtitleView = TextView(this).apply {
             text = "Siga o passo a passo com atalhos diretos para liberar as permissões no seu dispositivo:"
             textSize = 12f
-            setTextColor(getColor(R.color.app_secondary))
+            setTextColor(UiDesign.palette(this@MainActivity).secondary)
             setPadding(0, 0, 0, dp(12))
         }
         container.addView(subtitleView)
@@ -2232,9 +2321,9 @@ class MainActivity : ThemedActivity() {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(12), dp(12), dp(12), dp(12))
                 background = GradientDrawable().apply {
-                    setColor(getColor(R.color.app_surface))
+                    setColor(UiDesign.palette(this@MainActivity).surface)
                     cornerRadius = dp(8).toFloat()
-                    setStroke(dp(1), if (isGranted) Color.parseColor("#22C55E") else Color.parseColor("#334155"))
+                    setStroke(dp(1), if (isGranted) Color.parseColor("#22C55E") else visual.outline)
                 }
                 layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(10)) }
             }
@@ -2247,11 +2336,11 @@ class MainActivity : ThemedActivity() {
             val badgeText = TextView(this).apply {
                 text = stepNumber
                 textSize = 11f
-                setTextColor(Color.WHITE)
+                setTextColor(visual.background)
                 typeface = Typeface.DEFAULT_BOLD
                 setPadding(dp(6), dp(2), dp(6), dp(2))
                 background = GradientDrawable().apply {
-                    setColor(Color.parseColor("#2563EB"))
+                    setColor(visual.accent)
                     cornerRadius = dp(4).toFloat()
                 }
             }
@@ -2260,7 +2349,7 @@ class MainActivity : ThemedActivity() {
             val stepTitle = TextView(this).apply {
                 text = "  $title"
                 textSize = 13f
-                setTextColor(getColor(R.color.app_text))
+                setTextColor(UiDesign.palette(this@MainActivity).text)
                 typeface = Typeface.DEFAULT_BOLD
                 layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
             }
@@ -2288,7 +2377,7 @@ class MainActivity : ThemedActivity() {
             val descText = TextView(this).apply {
                 text = description
                 textSize = 12f
-                setTextColor(getColor(R.color.app_secondary))
+                setTextColor(UiDesign.palette(this@MainActivity).secondary)
                 setPadding(0, dp(6), 0, dp(8))
             }
             card.addView(descText)
@@ -2296,8 +2385,8 @@ class MainActivity : ThemedActivity() {
             val actionBtn = Button(this).apply {
                 text = buttonText
                 textSize = 11f
-                setTextColor(Color.WHITE)
-                setBackgroundColor(if (isGranted) Color.parseColor("#334155") else Color.parseColor("#2563EB"))
+                setTextColor(if (isGranted) visual.text else visual.background)
+                setBackgroundColor(if (isGranted) visual.outline else visual.accent)
                 setPadding(dp(10), dp(6), dp(10), dp(6))
                 setOnClickListener { onButtonClick() }
             }
@@ -2419,8 +2508,8 @@ class MainActivity : ThemedActivity() {
         val recheckBtn = Button(this).apply {
             text = "🔄 Re-verificar"
             textSize = 11f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#475569"))
+            setTextColor(visual.text)
+            setBackgroundColor(visual.outline)
             setPadding(dp(12), dp(6), dp(12), dp(6))
             layoutParams = LinearLayout.LayoutParams(-2, -2).apply { setMargins(0, 0, dp(8), 0) }
             setOnClickListener {
@@ -2431,8 +2520,8 @@ class MainActivity : ThemedActivity() {
         val closeBtn = Button(this).apply {
             text = "Concluir e Fechar"
             textSize = 11f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#10B981"))
+            setTextColor(visual.background)
+            setBackgroundColor(visual.accent)
             setPadding(dp(12), dp(6), dp(12), dp(6))
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
             setOnClickListener {
@@ -2504,9 +2593,9 @@ class MainActivity : ThemedActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(16), dp(16), dp(16))
             background = GradientDrawable().apply {
-                setColor(getColor(R.color.app_background))
+                setColor(UiDesign.palette(this@MainActivity).background)
                 cornerRadius = dp(12).toFloat()
-                setStroke(dp(2), getColor(R.color.app_accent))
+                setStroke(dp(2), UiDesign.palette(this@MainActivity).accent)
             }
         }
 
@@ -2520,7 +2609,7 @@ class MainActivity : ThemedActivity() {
         val titleView = TextView(this).apply {
             text = "📜 Hierarquia de Nós de Acessibilidade [$rideCount]"
             textSize = 15f
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(UiDesign.palette(this@MainActivity).text)
             typeface = Typeface.DEFAULT_BOLD
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
@@ -2528,7 +2617,7 @@ class MainActivity : ThemedActivity() {
         val closeX = TextView(this).apply {
             text = " ✖ "
             textSize = 18f
-            setTextColor(getColor(R.color.app_secondary))
+            setTextColor(UiDesign.palette(this@MainActivity).secondary)
             setPadding(dp(8), dp(4), dp(8), dp(4))
             setOnClickListener { activeJsonDialog?.dismiss() }
         }
@@ -2541,7 +2630,7 @@ class MainActivity : ThemedActivity() {
         val subText = TextView(this).apply {
             text = if (rideCount > 0) "Estrutura hierárquica organizada dos nós de acessibilidade da tela:" else "Nenhum nó capturado no momento. A hierarquia será atualizada ao vigiar a tela do inDrive."
             textSize = 12f
-            setTextColor(getColor(R.color.app_secondary))
+            setTextColor(UiDesign.palette(this@MainActivity).secondary)
             setPadding(0, 0, 0, dp(10))
         }
         container.addView(subText)
@@ -2550,9 +2639,9 @@ class MainActivity : ThemedActivity() {
         val scrollView = ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(-1, dp(280))
             background = GradientDrawable().apply {
-                setColor(getColor(R.color.app_input))
+                setColor(UiDesign.palette(this@MainActivity).input)
                 cornerRadius = dp(8).toFloat()
-                setStroke(dp(1), getColor(R.color.app_surface))
+                setStroke(dp(1), UiDesign.palette(this@MainActivity).surface)
             }
             setPadding(dp(10), dp(10), dp(10), dp(10))
         }
@@ -2560,7 +2649,7 @@ class MainActivity : ThemedActivity() {
         val jsonTextView = TextView(this).apply {
             text = formattedHierarchy
             textSize = 11f
-            setTextColor(getColor(R.color.app_accent))
+            setTextColor(UiDesign.palette(this@MainActivity).accent)
             typeface = Typeface.MONOSPACE
             setTextIsSelectable(true)
         }
@@ -2578,8 +2667,8 @@ class MainActivity : ThemedActivity() {
         val copyBtn = Button(this).apply {
             text = "📋 Copiar Hierarquia"
             textSize = 11f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#0284C7"))
+            setTextColor(UiDesign.palette(this@MainActivity).background)
+            setBackgroundColor(UiDesign.palette(this@MainActivity).accent)
             setPadding(dp(10), dp(6), dp(10), dp(6))
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(0, 0, dp(6), 0) }
             setOnClickListener {
@@ -2592,8 +2681,8 @@ class MainActivity : ThemedActivity() {
         val floatBtn = Button(this).apply {
             text = "🪟 Flutuar na Tela"
             textSize = 11f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#8B5CF6"))
+            setTextColor(UiDesign.palette(this@MainActivity).background)
+            setBackgroundColor(UiDesign.palette(this@MainActivity).accent)
             setPadding(dp(10), dp(6), dp(10), dp(6))
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(0, 0, dp(6), 0) }
             setOnClickListener {
@@ -2624,8 +2713,8 @@ class MainActivity : ThemedActivity() {
         val closeBtn = Button(this).apply {
             text = "Fechar"
             textSize = 11f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#475569"))
+            setTextColor(UiDesign.palette(this@MainActivity).text)
+            setBackgroundColor(UiDesign.palette(this@MainActivity).outline)
             setPadding(dp(10), dp(6), dp(10), dp(6))
             layoutParams = LinearLayout.LayoutParams(-2, -2)
             setOnClickListener { activeJsonDialog?.dismiss() }

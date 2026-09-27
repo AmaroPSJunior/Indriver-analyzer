@@ -42,31 +42,36 @@ class AppUpdateActivity : ThemedActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        UiDesign.applyWindow(this)
         waitingPermission = savedInstanceState?.getBoolean("permission") ?: false
         installerOpened = savedInstanceState?.getBoolean("installer") ?: false
         val padding = (24 * resources.displayMetrics.density).toInt()
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(padding, padding, padding, padding)
-            setBackgroundColor(getColor(R.color.app_background))
+            setBackgroundColor(UiDesign.palette(this@AppUpdateActivity).background)
         }
         root.addView(TextView(this).apply {
             text = "⬇️ Atualizar aplicativo"
             textSize = 22f
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(UiDesign.palette(this@AppUpdateActivity).text)
         })
         root.addView(TextView(this).apply {
             text = "v${packageManager.getPackageInfo(packageName, 0).versionName}\nA atualização mantém seus dados. Confirme a instalação quando o Android solicitar."
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(UiDesign.palette(this@AppUpdateActivity).text)
             setPadding(0, padding, 0, padding)
         })
-        status = TextView(this).apply { setTextColor(getColor(R.color.app_text)); textSize = 16f }
+        status = TextView(this).apply { setTextColor(UiDesign.palette(this@AppUpdateActivity).text); textSize = 16f }
         action = Button(this).apply {
             text = "Verificar atualização"
+            background = UiDesign.rounded(this@AppUpdateActivity, UiDesign.palette(this@AppUpdateActivity).accent, UiDesign.palette(this@AppUpdateActivity).radiusDp)
+            setTextColor(UiDesign.palette(this@AppUpdateActivity).background)
             setOnClickListener { installerOpened = false; resumeDownloadOrCheck() }
         }
         cancel = Button(this).apply {
             text = "Cancelar download"
+            background = UiDesign.rounded(this@AppUpdateActivity, UiDesign.palette(this@AppUpdateActivity).surface, UiDesign.palette(this@AppUpdateActivity).radiusDp, UiDesign.palette(this@AppUpdateActivity).outline)
+            setTextColor(UiDesign.palette(this@AppUpdateActivity).text)
             setOnClickListener {
                 handler.removeCallbacks(poll)
                 clearDownload()

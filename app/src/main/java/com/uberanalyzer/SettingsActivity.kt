@@ -26,20 +26,40 @@ class SettingsActivity : ThemedActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        UiDesign.applyWindow(this)
         settings = SettingsManager(this)
         setContentView(buildUI())
     }
 
     private fun buildUI(): ScrollView {
         val dp = { v: Int -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt() }
-        val scrollView = ScrollView(this).apply { setBackgroundColor(getColor(R.color.app_background)); isFillViewport = true }
+        val visual = UiDesign.palette(this@SettingsActivity)
+        val scrollView = ScrollView(this).apply { setBackgroundColor(visual.background); isFillViewport = true }
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(20), dp(20), dp(20)) }
 
-        root.addView(TextView(this).apply { text = "Configurações de Análise"; setTextColor(getColor(R.color.app_text)); textSize = 22f; typeface = Typeface.DEFAULT_BOLD; setPadding(0, 0, 0, dp(25)) })
+        root.addView(TextView(this).apply { text = "Configurações do motorista"; setTextColor(visual.text); textSize = 24f; typeface = Typeface.DEFAULT_BOLD; setPadding(0, 0, 0, dp(8)) })
+        root.addView(TextView(this).apply {
+            text = "Escolha uma proposta visual completa e compare cores, botões, cards e organização da tela principal."
+            setTextColor(visual.secondary)
+            textSize = 14f
+            setPadding(0, 0, 0, dp(14))
+        })
+        root.addView(Button(this).apply {
+            text = "🎨 Comparar as 3 interfaces"
+            textSize = 16f
+            setTextColor(visual.background)
+            background = UiDesign.rounded(this@SettingsActivity, visual.accent, visual.radiusDp)
+            layoutParams = LinearLayout.LayoutParams(-1, dp(56)).apply { bottomMargin = dp(18) }
+            setOnClickListener { showDesignChooser() }
+        })
 
         // Thresholds
         root.addView(Button(this).apply {
             text = "⬇️ Atualizar aplicativo"
+            textSize = 15f
+            setTextColor(visual.accent)
+            background = UiDesign.rounded(this@SettingsActivity, visual.surface, visual.radiusDp, visual.outline)
+            layoutParams = LinearLayout.LayoutParams(-1, dp(52)).apply { bottomMargin = dp(8) }
             setOnClickListener {
                 startActivity(android.content.Intent(this@SettingsActivity, AppUpdateActivity::class.java))
             }
@@ -51,18 +71,20 @@ class SettingsActivity : ThemedActivity() {
 
         val autoHideCheck = CheckBox(this).apply {
             text = "⚡ Ativar Auto-Ocultar automático para viagens abaixo do R$/km mínimo"
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(visual.text)
             textSize = 14f
             isChecked = settings.getAutoHideEnabled()
+            buttonTintList = android.content.res.ColorStateList.valueOf(visual.accent)
             setPadding(0, dp(4), 0, dp(8))
         }
         root.addView(autoHideCheck)
 
         val confirmHideCheck = CheckBox(this).apply {
             text = "Pedir confirmação ao ocultar manualmente viagens com valor R$/km abaixo da meta"
-            setTextColor(getColor(R.color.app_text))
+            setTextColor(UiDesign.palette(this@SettingsActivity).text)
             textSize = 14f
             isChecked = settings.getConfirmHideBelowMinKm()
+            buttonTintList = android.content.res.ColorStateList.valueOf(visual.accent)
             setPadding(0, dp(4), 0, dp(12))
         }
         root.addView(confirmHideCheck)
@@ -76,7 +98,7 @@ class SettingsActivity : ThemedActivity() {
         root.addView(highProfitInput)
 
         // Category Colors
-        root.addView(TextView(this).apply { text = "Cores das Categorias"; setTextColor(getColor(R.color.app_text)); textSize = 18f; setPadding(0, dp(30), 0, dp(10)) })
+        root.addView(TextView(this).apply { text = "Cores das Categorias"; setTextColor(UiDesign.palette(this@SettingsActivity).text); textSize = 18f; setPadding(0, dp(30), 0, dp(10)) })
         
         root.addView(createColorPickerSection("Uber X", SettingsManager.KEY_COLOR_UBER_X, SettingsManager.DEFAULT_UBER_X_COLOR, dp))
         root.addView(createColorPickerSection("Comfort", SettingsManager.KEY_COLOR_COMFORT, SettingsManager.DEFAULT_COMFORT_COLOR, dp))
@@ -84,7 +106,7 @@ class SettingsActivity : ThemedActivity() {
         root.addView(createColorPickerSection("Flash", SettingsManager.KEY_COLOR_FLASH, SettingsManager.DEFAULT_FLASH_COLOR, dp))
 
         // Rating Colors
-        root.addView(TextView(this).apply { text = "Cores das Avaliações (Bordas)"; setTextColor(getColor(R.color.app_text)); textSize = 18f; setPadding(0, dp(30), 0, dp(10)) })
+        root.addView(TextView(this).apply { text = "Cores das Avaliações (Bordas)"; setTextColor(UiDesign.palette(this@SettingsActivity).text); textSize = 18f; setPadding(0, dp(30), 0, dp(10)) })
         
         root.addView(createColorPickerSection("Excelente", SettingsManager.KEY_COLOR_EXCELLENT, SettingsManager.DEFAULT_EXCELLENT_COLOR, dp))
         root.addView(createColorPickerSection("Boa", SettingsManager.KEY_COLOR_GOOD, SettingsManager.DEFAULT_GOOD_COLOR, dp))
@@ -93,7 +115,7 @@ class SettingsActivity : ThemedActivity() {
 
         // Save Button
         val saveBtn = Button(this).apply {
-            text = "SALVAR CONFIGURAÇÕES"; setBackgroundColor(Color.parseColor("#4CAF50")); setTextColor(Color.WHITE)
+            text = "SALVAR CONFIGURAÇÕES"; background = UiDesign.rounded(this@SettingsActivity, visual.accent, visual.radiusDp); setTextColor(visual.background)
             layoutParams = LinearLayout.LayoutParams(-1, dp(60)).apply { setMargins(0, dp(40), 0, dp(50)) }
             setOnClickListener {
                 settings.setMinKmValue(kmInput.text.toString().toFloatOrNull() ?: 2.0f)
@@ -115,6 +137,87 @@ class SettingsActivity : ThemedActivity() {
 
         scrollView.addView(root)
         return scrollView
+    }
+
+    private fun showDesignChooser() {
+        val proposals = listOf(
+            Triple("classic", "🌌 Aurora", "Azul-ciano · estrutura familiar · cards junto aos filtros"),
+            Triple("driver", "🚗 Cabine", "Verde-petróleo · controles maiores · mapa amplo e cards no rodapé"),
+            Triple("queue", "📋 Central da fila", "Azul de alto contraste · cards largos antes do mapa · valores em destaque")
+        )
+        val selected = UiDesign.selectedId(this)
+        val density = resources.displayMetrics.density
+        val dp = { value: Int -> (value * density).toInt() }
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+        }
+        val scroll = ScrollView(this).apply { addView(list) }
+        proposals.forEach { (id, name, description) ->
+            val colors = UiDesign.paletteFor(this@SettingsActivity, id)
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+                background = UiDesign.rounded(this@SettingsActivity, colors.surface, colors.radiusDp, colors.outline)
+                layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) }
+            }
+            card.addView(TextView(this).apply {
+                text = if (id == selected) "✓ $name · ATUAL" else name
+                textSize = 18f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(colors.text)
+            })
+            card.addView(TextView(this).apply {
+                text = description
+                textSize = 14f
+                setTextColor(colors.secondary)
+                setPadding(0, dp(5), 0, dp(10))
+            })
+            card.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(10), dp(9), dp(10), dp(9))
+                background = UiDesign.rounded(this@SettingsActivity, colors.raisedSurface, colors.radiusDp)
+                addView(TextView(this@SettingsActivity).apply {
+                    text = "R$ 42,50\n3,8 km · 4,92 ⭐"
+                    textSize = 16f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(colors.text)
+                    layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+                })
+                addView(TextView(this@SettingsActivity).apply {
+                    text = "R$ 3,20/km"
+                    textSize = 14f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(colors.accent)
+                })
+            })
+            card.addView(Button(this).apply {
+                text = if (id == selected) "Interface selecionada" else "Experimentar $name"
+                isEnabled = id != selected
+                setTextColor(if (isEnabled) colors.background else colors.secondary)
+                background = UiDesign.rounded(this@SettingsActivity, colors.accent, colors.radiusDp)
+                layoutParams = LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) }
+                setOnClickListener {
+                    if (id == selected) return@setOnClickListener
+                    androidx.appcompat.app.AlertDialog.Builder(this@SettingsActivity)
+                        .setTitle("Aplicar $name?")
+                        .setMessage("A tela principal será reorganizada e receberá outra identidade visual. Corridas, filtros e configurações ficam preservados.")
+                        .setNegativeButton("Continuar comparando", null)
+                        .setPositiveButton("Confirmar interface") { _, _ ->
+                            getSharedPreferences("map_layout", MODE_PRIVATE).edit().putString("main_ui_layout", id).apply()
+                            Toast.makeText(this@SettingsActivity, "$name selecionada. A tela principal será atualizada ao voltar.", Toast.LENGTH_LONG).show()
+                        }
+                        .show()
+                }
+            })
+            list.addView(card)
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Compare as propostas de interface")
+            .setView(scroll)
+            .setNegativeButton("Fechar", null)
+            .show()
     }
 
     private fun createColorPickerSection(label: String, key: String, default: String, dp: (Int) -> Int): LinearLayout {
@@ -169,11 +272,11 @@ class SettingsActivity : ThemedActivity() {
     }
 
     private fun createLabel(text: String) = TextView(this).apply { 
-        this.text = text; setTextColor(getColor(R.color.app_secondary)); setPadding(0, 10, 0, 8); textSize = 15f
+        this.text = text; setTextColor(UiDesign.palette(this@SettingsActivity).secondary); setPadding(0, 10, 0, 8); textSize = 15f
     }
 
     private fun createEditText(value: String, inputType: Int) = EditText(this).apply {
-        setText(value); setTextColor(getColor(R.color.app_text)); setBackgroundColor(getColor(R.color.app_input))
+        setText(value); setTextColor(UiDesign.palette(this@SettingsActivity).text); setBackground(UiDesign.rounded(this@SettingsActivity, UiDesign.palette(this@SettingsActivity).input, UiDesign.palette(this@SettingsActivity).radiusDp, UiDesign.palette(this@SettingsActivity).outline))
         this.inputType = inputType; setPadding(25, 25, 25, 25)
     }
 }
