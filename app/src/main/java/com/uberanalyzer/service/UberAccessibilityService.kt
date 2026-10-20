@@ -321,6 +321,7 @@ class UberAccessibilityService : AccessibilityService() {
         directionFilterVerified: Boolean = false
     ): Boolean {
         if (destinationFilterCheckPending && !directionFilterAlreadyChecked) return true
+        if (rides.isEmpty()) com.uberanalyzer.overlay.RideBorderOverlay.clear()
         recentRides = rides
         recentWindow = capturedWindow?.let { android.graphics.Rect(it) }
         capturedAt = scanStartedAt
@@ -421,6 +422,8 @@ class UberAccessibilityService : AccessibilityService() {
 
         val visibleRouteLimit = if (directionFilterEnabled) minOf(maxRoutes, 3) else maxRoutes
         val capturedRides = destinationMemory.update(rides, now).take(visibleRouteLimit)
+        // Draw only the routes actually sent to the map, preserving their order and colors.
+        com.uberanalyzer.overlay.RideBorderOverlay.show(this, capturedRides, capturedWindow)
         if (capturedRides.isNotEmpty()) {
             lastProcessedTime = now
 
@@ -754,6 +757,7 @@ class UberAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         destroyed = true
+        com.uberanalyzer.overlay.RideBorderOverlay.clear()
         pendingSelection = null
         scanHandler.removeCallbacksAndMessages(null)
         executor.shutdownNow()
