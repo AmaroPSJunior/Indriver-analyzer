@@ -430,7 +430,7 @@ class UberAccessibilityService : AccessibilityService() {
             if (autoHide && pendingSelection == null && !gesturePending && android.os.SystemClock.elapsedRealtime() >= nextScanAfter) {
                 val values = (0..2).map { position ->
                     val ride = rides.firstOrNull { it.screenListIndex == position }
-                    ride?.earningsPerKm ?: 0.0
+                    ride?.earningsPerKm?.takeIf { it.isFinite() && it > 0.0 } ?: Double.POSITIVE_INFINITY
                 }
                 val protectedValues = values.map { rate ->
                     if (settings.getProtectHighProfitEnabled() && rate.isFinite() && rate >= settings.getProtectHighProfitRate()) Double.POSITIVE_INFINITY else rate
