@@ -69,11 +69,19 @@ class SettingsActivity : ThemedActivity() {
         val kmInput = createEditText(settings.getMinKmValue().toString(), InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL)
         val hourInput = createEditText(settings.getMinHourValue().toString(), InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL)
         val highProfitInput = createEditText(settings.getHighProfitAlertKm().toString(), InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL)
+        val protectRateInput = createEditText(settings.getProtectHighProfitRate().toString(), InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL)
+        val protectHighProfitCheck = CheckBox(this).apply {
+            setTextColor(visual.text); textSize = 14f
+            text = "Proteger corridas rentáveis do descarte automático"
+            isChecked = settings.getProtectHighProfitEnabled()
+        }
         val decisionRules = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(createLabel("Piso de ganho · R$/km")); addView(kmInput)
             addView(createLabel("Meta de produtividade · R$/hora")); addView(hourInput)
             addView(createLabel("Avisar a partir de · R$/km")); addView(highProfitInput)
+            addView(protectHighProfitCheck)
+            addView(createLabel("Proteger a partir de · R$/km")); addView(protectRateInput)
         }
         val autoHideCheck = CheckBox(this).apply {
             text = "Ocultar automaticamente corridas abaixo do piso de R$/km"
@@ -111,6 +119,8 @@ class SettingsActivity : ThemedActivity() {
             settings.setConfirmHideBelowMinKm(confirmHideCheck.isChecked)
             settings.setMinHourValue(hourInput.text.toString().toFloatOrNull() ?: 45.0f)
             settings.setHighProfitAlertKm(highProfitInput.text.toString().toFloatOrNull() ?: 4.0f)
+            settings.setProtectHighProfitEnabled(protectHighProfitCheck.isChecked)
+            settings.setProtectHighProfitRate(protectRateInput.text.toString().replace(",", ".").toFloatOrNull() ?: 4.0f)
             selectedColors.forEach { (key, color) ->
                 if (key.startsWith("rating_")) settings.setRatingColor(key, color)
                 else settings.setCategoryColor(key, color)
