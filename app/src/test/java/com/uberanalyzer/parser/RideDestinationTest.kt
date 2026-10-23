@@ -118,4 +118,23 @@ class RideDestinationTest {
         assertEquals("Shopping Ibirapuera, Avenida Ibirapuera, 3103", destination)
     }
 
+    @Test fun completePickupAndLandmarkDestinationRemainDistinct() {
+        val (origin, destination) = RideAddressParser.extract(listOf(
+            "Rua das Flores, 12",
+            "Shopping Ibirapuera, Avenida Ibirapuera, 3103"
+        ))
+        assertEquals("Rua das Flores, 12", origin)
+        assertEquals("Shopping Ibirapuera, Avenida Ibirapuera, 3103", destination)
+    }
+
+    @Test fun wrappedLandmarkDestinationDoesNotBecomeExtraStop() {
+        val (origin, destination) = RideAddressParser.extract(listOf(
+            "Rua das Flores, 12",
+            "Shopping Ibirapuera, Avenida Ibirapuera,",
+            "3103, São Paulo - SP"
+        ))
+        assertEquals("Rua das Flores, 12", origin)
+        assertEquals("Shopping Ibirapuera, Avenida Ibirapuera, 3103, São Paulo - SP", destination)
+    }
+
 }
