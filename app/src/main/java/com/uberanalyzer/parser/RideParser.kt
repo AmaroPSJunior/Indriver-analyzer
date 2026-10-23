@@ -227,6 +227,10 @@ object RideParser {
                     paymentMethod = paymentMethod,
                     screenRowY = priceBox?.centerY(),
                     screenListIndex = rides.size,
+                    screenPriceLeft = priceBox?.left,
+                    screenPriceTop = priceBox?.top,
+                    screenPriceRight = priceBox?.right,
+                    screenPriceBottom = priceBox?.bottom,
                     rawText = fullBlockText
                 )
             )
