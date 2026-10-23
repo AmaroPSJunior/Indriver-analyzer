@@ -7,9 +7,11 @@ on:
 permissions:
   contents: write
 
+# Build only updates to main (direct pushes or merged PRs).
+# Superseded runs are cancelled to avoid spending CI minutes on obsolete APKs.
 concurrency:
   group: android-test-apk
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
