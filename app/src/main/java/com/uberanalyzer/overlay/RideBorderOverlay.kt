@@ -32,9 +32,13 @@ object RideBorderOverlay {
                 return@post
             }
             val markers = rides.mapIndexedNotNull { index, ride ->
-                val y = ride.screenRowY ?: return@mapIndexedNotNull null
-                if (y <= window.top || y >= window.bottom) return@mapIndexedNotNull null
-                Marker(y, Color.parseColor(MainActivity.ROUTE_COLORS[index % MainActivity.ROUTE_COLORS.size]))
+                val left = ride.screenPriceLeft ?: return@mapIndexedNotNull null
+                val top = ride.screenPriceTop ?: return@mapIndexedNotNull null
+                val right = ride.screenPriceRight ?: return@mapIndexedNotNull null
+                val bottom = ride.screenPriceBottom ?: return@mapIndexedNotNull null
+                val priceBounds = Rect(left, top, right, bottom)
+                if (priceBounds.isEmpty || !Rect.intersects(window, priceBounds)) return@mapIndexedNotNull null
+                Marker(priceBounds, Color.parseColor(MainActivity.ROUTE_COLORS[index % MainActivity.ROUTE_COLORS.size]))
             }
             if (markers.isEmpty()) {
                 clearOnMain()
@@ -77,14 +81,14 @@ object RideBorderOverlay {
         owner = null
     }
 
-    private data class Marker(val centerY: Int, val color: Int)
+    private data class Marker(val priceBounds: Rect, val color: Int)
 
     private class BorderView(service: AccessibilityService) : View(service) {
         private var bounds = Rect()
         private var markers = emptyList<Marker>()
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
-            strokeWidth = resources.displayMetrics.density * 3f
+            strokeWidth = resources.displayMetrics.density * 4f
         }
 
         fun update(window: Rect, current: List<Marker>) {
@@ -95,15 +99,20 @@ object RideBorderOverlay {
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
-            val margin = resources.displayMetrics.density * 5f
-            val halfHeight = resources.displayMetrics.density * 30f
-            val radius = resources.displayMetrics.density * 10f
+            val density = resources.displayMetrics.density
+            val horizontalPadding = 9f * density
+            val verticalPadding = 6f * density
+            val radius = 15f * density
             for (marker in markers) {
                 paint.color = marker.color
-                val top = maxOf(bounds.top.toFloat() + margin, marker.centerY - halfHeight)
-                val bottom = minOf(bounds.bottom.toFloat() - margin, marker.centerY + halfHeight)
-                if (bottom > top && bounds.width() > margin * 2) {
-                    canvas.drawRoundRect(bounds.left + margin, top, bounds.right - margin, bottom, radius, radius, paint)
+                val price = marker.priceBounds
+                val halfStroke = paint.strokeWidth / 2
+                val left = maxOf(bounds.left.toFloat() + halfStroke, price.left - horizontalPadding)
+                val top = maxOf(bounds.top.toFloat() + halfStroke, price.top - verticalPadding)
+                val right = minOf(bounds.right.toFloat() - halfStroke, price.right + horizontalPadding)
+                val bottom = minOf(bounds.bottom.toFloat() - halfStroke, price.bottom + verticalPadding)
+                if (right > left && bottom > top) {
+                    canvas.drawRoundRect(left, top, right, bottom, radius, radius, paint)
                 }
             }
         }
