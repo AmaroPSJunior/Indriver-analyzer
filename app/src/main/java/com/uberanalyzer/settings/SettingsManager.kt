@@ -15,6 +15,8 @@ class SettingsManager(context: Context) {
         const val KEY_HIGH_PROFIT_ALERT_KM_VALUE = "high_profit_alert_km_value"
         const val KEY_CONFIRM_HIDE_BELOW_MIN_KM = "confirm_hide_below_min_km"
         const val KEY_AUTO_HIDE_ENABLED = "auto_hide_enabled"
+        const val KEY_PROTECT_HIGH_PROFIT_ENABLED = "protect_high_profit_enabled"
+        const val KEY_PROTECT_HIGH_PROFIT_RATE = "protect_high_profit_rate"
         const val KEY_DESTINATION_DIRECTION_FILTER_ENABLED = "destination_direction_filter_enabled"
         const val KEY_SELECTED_DESTINATION_FILTER_ADDRESS = "selected_destination_filter_address"
         
@@ -74,6 +76,11 @@ class SettingsManager(context: Context) {
 
     fun getConfirmHideBelowMinKm(): Boolean = prefs.getBoolean(KEY_CONFIRM_HIDE_BELOW_MIN_KM, true)
     fun setConfirmHideBelowMinKm(value: Boolean) = prefs.edit().putBoolean(KEY_CONFIRM_HIDE_BELOW_MIN_KM, value).apply()
+
+    fun getProtectHighProfitEnabled(): Boolean = prefs.getBoolean(KEY_PROTECT_HIGH_PROFIT_ENABLED, false)
+    fun setProtectHighProfitEnabled(value: Boolean) = prefs.edit().putBoolean(KEY_PROTECT_HIGH_PROFIT_ENABLED, value).apply()
+    fun getProtectHighProfitRate(): Float = prefs.getFloat(KEY_PROTECT_HIGH_PROFIT_RATE, 4.0f).takeIf { it.isFinite() && it > 0 } ?: 4.0f
+    fun setProtectHighProfitRate(value: Float) = prefs.edit().putFloat(KEY_PROTECT_HIGH_PROFIT_RATE, value.takeIf { it.isFinite() && it > 0 } ?: 4.0f).apply()
 
     fun getAutoHideEnabled(): Boolean = prefs.getBoolean(KEY_AUTO_HIDE_ENABLED, false)
     fun setAutoHideEnabled(value: Boolean) = prefs.edit().putBoolean(KEY_AUTO_HIDE_ENABLED, value).apply()
