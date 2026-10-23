@@ -109,4 +109,13 @@ class RideDestinationTest {
     @Test fun truncatedFinalStopIsNotReplacedWithIntermediateStop() {
         assertEquals(pickup to "", RideAddressParser.extract(listOf(pickup, destination, "Rua Final 20 (Centro")))
     }
+    @Test fun landmarkStopDoesNotMergeIntoIncompletePreviousStreet() {
+        val (origin, destination) = RideAddressParser.extract(listOf(
+            "Rua das Flores, 12 (Centro",
+            "Shopping Ibirapuera, Avenida Ibirapuera, 3103"
+        ))
+        assertEquals("", origin)
+        assertEquals("Shopping Ibirapuera, Avenida Ibirapuera, 3103", destination)
+    }
+
 }
