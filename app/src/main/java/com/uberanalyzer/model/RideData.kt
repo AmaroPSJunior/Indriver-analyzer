@@ -27,7 +27,12 @@ data class InDriverRide(
     val dLng: Double = 0.0,
     // Ephemeral screen metadata: never serialized into history or map routes.
     val screenRowY: Int? = null,
-    val screenListIndex: Int? = null
+    val screenListIndex: Int? = null,
+    // Bounding box of fare text in screen pixels; used only for the inDrive overlay.
+    val screenPriceLeft: Int? = null,
+    val screenPriceTop: Int? = null,
+    val screenPriceRight: Int? = null,
+    val screenPriceBottom: Int? = null
 ) {
     fun toJsonObject(): JSONObject {
         val json = JSONObject()
