@@ -22,7 +22,7 @@ object RideAddressParser {
             if (line.isBlank() || line.contains("R$", true) || line.equals("PIX", true)) continue
             val startsAddress = street.containsMatchIn(line) || landmark.containsMatchIn(line) || numbered.containsMatchIn(line)
             // A new street at the start is another stop, even if the previous OCR line was cut off.
-            val newStreet = street.find(line)?.range?.first == 0
+            val newStreet = street.find(line)?.range?.first == 0 || landmark.find(line)?.range?.first == 0
             if (pending.isNotEmpty() && !newStreet) {
                 pending += " $line"
             } else if (startsAddress) {
