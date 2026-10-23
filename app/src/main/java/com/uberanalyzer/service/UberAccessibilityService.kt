@@ -432,14 +432,19 @@ class UberAccessibilityService : AccessibilityService() {
                     val ride = rides.firstOrNull { it.screenListIndex == position }
                     ride?.earningsPerKm ?: 0.0
                 }
-                val index = AutoHidePolicy.firstBelowMinimum(values, minKm, rides.size)
+                val protectedValues = values.map { rate ->
+                    if (settings.getProtectHighProfitEnabled() && rate.isFinite() && rate >= settings.getProtectHighProfitRate()) Double.POSITIVE_INFINITY else rate
+                }
+                val index = AutoHidePolicy.firstBelowMinimum(protectedValues, minKm, rides.size)
                 if (index != null && capturedWindow != null) {
                     val snapshot = recentRides
                     scanHandler.post {
                         val currentSettings = com.uberanalyzer.settings.SettingsManager(this)
                         val latestMinimum = currentSettings.getMinKmValue().toDouble()
                         if (!destroyed && pendingSelection == null && recentRides === snapshot && currentSettings.getAutoHideEnabled() &&
-                            AutoHidePolicy.firstBelowMinimum(values, latestMinimum, snapshot.size) == index) {
+                            AutoHidePolicy.firstBelowMinimum(values.map { rate ->
+                                if (currentSettings.getProtectHighProfitEnabled() && rate.isFinite() && rate >= currentSettings.getProtectHighProfitRate()) Double.POSITIVE_INFINITY else rate
+                            }, latestMinimum, snapshot.size) == index) {
                             performSwipeHideItem(index, automatic = true)
                         }
                     }
@@ -513,22 +518,19 @@ class UberAccessibilityService : AccessibilityService() {
     ): DestinationDirectionCheck {
         val target = resolveDirectionFilterCoordinates(selectedAddress)
             ?: return DestinationDirectionCheck(targetResolved = false)
+        val settings = com.uberanalyzer.settings.SettingsManager(this)
 
         val invalidIds = linkedSetOf<String>()
         var firstInvalidScreenIndex: Int? = null
         for ((position, ride) in rides.take(3).withIndex()) {
             val screenIndex = ride.screenListIndex ?: position
-            var invalid = false
-            if (!RideParser.isRealAddress(ride.pickupAddress) || !RideParser.isRealAddress(ride.dropoffAddress)) {
-                invalid = true
-            } else {
-                val origin = resolveDirectionFilterCoordinates(ride.pickupAddress)
-                val destination = resolveDirectionFilterCoordinates(ride.dropoffAddress)
-                if (origin == null || destination == null ||
-                    distanceBetweenCoordinates(destination, target) >= distanceBetweenCoordinates(origin, target)) {
-                    invalid = true
-                }
-            }
+            // Incomplete OCR/geocoding is UNKNOWN, never proof a ride goes the wrong way.
+            val protected = settings.getProtectHighProfitEnabled() &&
+                ride.earningsPerKm.isFinite() && ride.earningsPerKm >= settings.getProtectHighProfitRate()
+            val origin = if (RideParser.isRealAddress(ride.pickupAddress)) resolveDirectionFilterCoordinates(ride.pickupAddress) else null
+            val destination = if (RideParser.isRealAddress(ride.dropoffAddress)) resolveDirectionFilterCoordinates(ride.dropoffAddress) else null
+            val invalid = !protected && origin != null && destination != null &&
+                distanceBetweenCoordinates(destination, target) >= distanceBetweenCoordinates(origin, target)
             if (invalid) {
                 invalidIds.add(ride.id)
                 if (invalidIds.size == 1 && ride.screenRowY != null && screenIndex in 0..2) {
